@@ -1,0 +1,2683 @@
+<?xml version='1.0' encoding='utf-8'?>
+<roblox version="4" xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd"><External>null</External><External>nil</External><Item class="Workspace" referent="RBX_Workspace"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">true</bool><float name="StreamingMinRadius">64</float><float name="StreamingTargetRadius">256</float></Properties></Item><Item class="Lighting" referent="RBX_Lighting"><Properties><string name="Name">Lighting</string></Properties></Item><Item class="ReplicatedStorage" referent="RBX_ReplicatedStorage"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="ModuleScript" referent="RBX_SwordData"><Properties><string name="Name">SwordData</string><ProtectedString name="Source">--[[
+	SwordData  (ModuleScript)  -&gt;  put in ReplicatedStorage and NAME IT exactly: SwordData
+	Shared by the server and the client:
+	  * 14 original anime weapons with distinct silhouettes; no external model assets
+	  * stages, enemy HP formula, eggs/pets, auras, rebirth cost, number formatting
+]]
+
+local M = {}
+
+M.GROUP_ID = 0 -- put your Roblox group id here for a +10% group bonus (0 = off)
+M.STAGE_MINIONS = 5
+M.SWING_COOLDOWN = 0.42
+M.ATTACK_RANGE = 13
+M.MAX_MASTERY = 100
+
+-- Rewards belong to completed rooms, never to a client-supplied amount.
+function M.roomTrophies(stage)
+	return math.floor(5 * 1.65 ^ (math.clamp(stage, 1, 15) - 1))
+end
+
+function M.roomReward(stage)
+	return math.floor(200 * 2.5 ^ (math.clamp(stage, 1, 15) - 1))
+end
+
+function M.masteryNeed(level)
+	return math.floor(35 * 1.18 ^ math.clamp(level, 0, M.MAX_MASTERY))
+end
+
+function M.masteryMultiplier(level)
+	return 1 + 0.08 * math.clamp(level, 0, M.MAX_MASTERY)
+end
+
+---------------------------------------------------------------- HELPERS
+local SUFFIX = { "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc" }
+
+function M.fmt(n)
+	n = math.floor(n or 0)
+	if n &lt; 1000 then return tostring(n) end
+	local i = 1
+	while n &gt;= 1000 and i &lt; #SUFFIX do
+		n /= 1000
+		i += 1
+	end
+	return string.format("%.2f%s", n, SUFFIX[i])
+end
+
+function M.enemyHp(stage, boss)
+	local base = 30 * 1.9 ^ (stage - 1)
+	return math.floor(boss and base * 6 or base)
+end
+
+function M.rebirthCost(rebirths)
+	return 100000 * 3 ^ rebirths
+end
+
+---------------------------------------------------------------- SWORDS
+local c = Color3.fromRGB
+local mat = Enum.Material
+
+-- cost = Spirit price, mult = how much it multiplies your Spirit per click and your damage
+M.SWORDS = {
+	{ name = "Rusty Katana", cost = 0, mult = 1, length = 3.6, width = 0.55,
+		blade = c(150, 150, 155), material = mat.Metal, guard = "disc", guardColor = c(60, 60, 60),
+		handle = c(90, 60, 40), wrap = c(35, 28, 24), trail = c(210, 210, 210) },
+
+	{ name = "Jade Wind Blade", cost = 250, mult = 2, length = 3.8, width = 0.55,
+		blade = c(90, 200, 150), material = mat.SmoothPlastic, edge = c(170, 255, 210), guard = "disc", guardColor = c(230, 200, 90),
+		handle = c(30, 90, 60), wrap = c(20, 60, 40), trail = c(140, 255, 190), fx = "wind" },
+
+	{ name = "Crimson Fang", cost = 1500, mult = 4, length = 4.0, width = 0.6, serrated = true,
+		blade = c(120, 20, 30), material = mat.Metal, edge = c(255, 50, 60), guard = "cross", guardColor = c(30, 30, 30),
+		handle = c(40, 20, 20), wrap = c(150, 20, 30), trail = c(255, 60, 70), fx = "ember" },
+
+	{ name = "Frost Saber", cost = 8000, mult = 7, length = 4.2, width = 0.6,
+		blade = c(190, 235, 255), material = mat.Ice, edge = c(255, 255, 255), guard = "wings", guardColor = c(140, 200, 255),
+		handle = c(60, 90, 130), wrap = c(220, 240, 255), trail = c(170, 230, 255), fx = "snow" },
+
+	{ name = "Thunder Tachi", cost = 30000, mult = 12, length = 4.6, width = 0.5,
+		blade = c(255, 235, 90), material = mat.Neon, guard = "disc", guardColor = c(50, 50, 60),
+		handle = c(30, 30, 40), wrap = c(255, 220, 60), trail = c(255, 240, 120), fx = "spark" },
+
+	{ name = "Shadow Wakizashi", cost = 100000, mult = 20, length = 3.8, width = 0.5,
+		blade = c(30, 20, 40), material = mat.Metal, edge = c(170, 80, 255), guard = "cross", guardColor = c(20, 20, 30),
+		handle = c(20, 15, 30), wrap = c(110, 40, 190), trail = c(170, 90, 255), fx = "smoke" },
+
+	{ name = "Solar Claymore", cost = 350000, mult = 35, length = 5.2, width = 1.0,
+		blade = c(255, 200, 60), material = mat.Metal, edge = c(255, 120, 20), guard = "wings", guardColor = c(255, 190, 40),
+		handle = c(120, 60, 20), wrap = c(255, 140, 30), trail = c(255, 180, 50), fx = "fire" },
+
+	{ name = "Sakura Edge", cost = 1000000, mult = 60, length = 4.4, width = 0.55,
+		blade = c(255, 205, 225), material = mat.SmoothPlastic, edge = c(255, 120, 170), guard = "disc", guardColor = c(255, 150, 190),
+		handle = c(120, 50, 80), wrap = c(255, 170, 200), trail = c(255, 160, 200), fx = "petals" },
+
+	{ name = "Void Reaper", cost = 3000000, mult = 100, length = 5.0, width = 0.7, hook = true,
+		blade = c(25, 10, 45), material = mat.Neon, edge = c(200, 60, 255), guard = "cross", guardColor = c(15, 10, 25),
+		handle = c(15, 10, 25), wrap = c(130, 30, 200), trail = c(190, 70, 255), fx = "void" },
+
+	{ name = "Twin Dragon Glaive", cost = 9000000, mult = 170, length = 3.6, width = 0.6, double = true,
+		blade = c(60, 180, 120), material = mat.Metal, edge = c(255, 230, 100), guard = "disc", guardColor = c(230, 190, 60),
+		handle = c(70, 40, 20), wrap = c(30, 110, 70), trail = c(120, 255, 170), fx = "ember" },
+
+	{ name = "Celestial Blade", cost = 25000000, mult = 300, length = 5.4, width = 0.7, halo = true,
+		blade = c(250, 250, 255), material = mat.SmoothPlastic, edge = c(255, 230, 130), guard = "wings", guardColor = c(255, 215, 90),
+		handle = c(200, 180, 120), wrap = c(255, 255, 255), trail = c(255, 240, 170), fx = "stars" },
+
+	{ name = "Phoenix Saber", cost = 70000000, mult = 520, length = 5.2, width = 0.7,
+		blade = c(255, 120, 40), material = mat.Neon, edge = c(255, 230, 90), guard = "wings", guardColor = c(200, 50, 20),
+		handle = c(90, 20, 10), wrap = c(255, 150, 40), trail = c(255, 150, 40), fx = "fire" },
+
+	{ name = "Abyss Cleaver", cost = 200000000, mult = 900, length = 6.0, width = 1.3, serrated = true,
+		blade = c(15, 15, 20), material = mat.Slate, edge = c(255, 40, 40), guard = "cross", guardColor = c(40, 10, 10),
+		handle = c(20, 10, 10), wrap = c(200, 20, 20), trail = c(255, 50, 50), fx = "smoke" },
+
+	{ name = "Astral Sovereign", cost = 600000000, mult = 1600, length = 6.4, width = 0.8, halo = true,
+		blade = c(190, 170, 255), material = mat.Neon, edge = c(255, 255, 255), guard = "wings", guardColor = c(255, 225, 120),
+		handle = c(60, 40, 110), wrap = c(255, 225, 120), trail = c(210, 190, 255), fx = "stars" },
+}
+
+-- Design is geometry, not just a palette swap. Each family has a separate profile.
+local DESIGNS = {
+	{ "ronin", "Worn / I", "Common", "An heirloom blade with a chipped steel edge." },
+	{ "leaf", "Gale / II", "Uncommon", "A leaf-forged split tip and jade crescent guard." },
+	{ "fang", "Bloodmoon / III", "Rare", "Five crimson teeth tear across a blackened spine." },
+	{ "crystal", "Glacier / IV", "Rare", "A crystalline rapier crowned by six ice shards." },
+	{ "lightning", "Raijin / V", "Epic", "An angular lightning blade held in a storm wheel." },
+	{ "shadow", "Nightfall / VI", "Epic", "An offset twin-edge shortblade with a chain tassel." },
+	{ "sun", "Daybreak / VII", "Legendary", "A broad sun cleaver with a radiant disc guard." },
+	{ "sakura", "Bloom / VIII", "Legendary", "A curved blossom katana with a petal tsuba." },
+	{ "reaper", "Eclipse / IX", "Mythic", "A crescent hook catches the light of a dying star." },
+	{ "dragon", "Jade Oath / X", "Mythic", "Twin dragon heads guard opposing gilded blades." },
+	{ "celestial", "Seraph / XI", "Mythic", "An open-center angel blade between floating wings." },
+	{ "phoenix", "Ashfall / XII", "Secret", "A fan of flame feathers rises from a molten core." },
+	{ "cleaver", "Oblivion / XIII", "Secret", "An immense executioner's slab with a broken spine." },
+	{ "astral", "Sovereign / XIV", "Celestial", "Four floating starsteel segments orbit a royal seal." },
+}
+for i, design in DESIGNS do
+	local def = M.SWORDS[i]
+	def.design, def.title, def.rarity, def.description = table.unpack(design)
+end
+
+local TEX = {
+	sparkles = "rbxasset://textures/particles/sparkles_main.dds",
+	fire = "rbxasset://textures/particles/fire_main.dds",
+	smoke = "rbxasset://textures/particles/smoke_main.dds",
+}
+
+-- All components are welded to Handle; works as a Tool and in a ViewportFrame.
+-- Blade points along local -Z, thickness X and cutting profile Y.
+function M.buildSword(def, container)
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.32, 0.32, 1.5)
+	handle.Color = def.handle
+	handle.Material = mat.Fabric
+	handle.CanCollide, handle.CanTouch, handle.CanQuery = false, false, false
+	handle.Massless = true
+	handle.Parent = container
+	if container:IsA("Model") then container.PrimaryPart = handle end
+	local edge = def.edge or def.trail
+	local design = def.design or "ronin"
+	local length, width = def.length, def.width
+	local function part(name, size, cf, color, material, shape)
+		local p = Instance.new("Part")
+		p.Name, p.Size = name, size
+		p.Color, p.Material = color, material or mat.Metal
+		if shape then p.Shape = shape end
+		p.CanCollide, p.CanTouch, p.CanQuery = false, false, false
+		p.Massless, p.CastShadow = true, false
+		p.CFrame = handle.CFrame * cf
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0, weld.Part1, weld.Parent = handle, p, p
+		p.Parent = container
+		return p
+	end
+	local function bar(name, y, z, wide, long, color, angle, thickness, material)
+		return part(name, Vector3.new(thickness or 0.15, wide, long),
+			CFrame.new(0, y, z) * CFrame.Angles(math.rad(angle or 0), 0, 0), color, material)
+	end
+	local function gem(y, z, scale, color)
+		return part("SpiritGem", Vector3.one * scale, CFrame.new(0, y, z)
+			* CFrame.Angles(math.rad(45), math.rad(45), 0), color, mat.Neon)
+	end
+	-- An actual open ring: unlike a solid cylinder, the silhouette has a clear void.
+	local function ring(name, y, z, radius, count, color, roll)
+		for i = 1, count do
+			local a = (i / count) * math.pi * 2 + (roll or 0)
+			part(name, Vector3.new(0.17, 2 * radius * math.sin(math.pi / count) + 0.035, 0.13),
+				CFrame.new(0, y + math.cos(a) * radius, z + math.sin(a) * radius)
+				* CFrame.Angles(a + math.pi / 2, 0, 0), color, mat.Neon)
+		end
+	end
+	local function feather(y, z, size, angle, color)
+		bar("Feather", y, z, size * 0.26, size, color, angle)
+		bar("FeatherVein", y, z, 0.05, size * 0.85, edge, angle, 0.18, mat.Neon)
+	end
+	local function katana(curve, broad, dir)
+		dir = dir or -1
+		local segments = 8
+		for i = 1, segments do
+			local t = (i - 0.5) / segments
+			local taper = i == segments and 0.45 or (1 - t * 0.22)
+			local y = curve * t * t
+			local z = dir * (0.96 + length * t)
+			local angle = -dir * math.deg(math.atan(2 * curve * t / length))
+			bar("BladeSegment", y, z, broad * taper, length / segments + 0.07, def.blade, angle, 0.15, def.material)
+			bar("HamonEdge", y - broad * taper * 0.43, z, 0.055, length / segments + 0.055, edge, angle, 0.18, mat.Neon)
+		end
+	end
+	-- Braided grip, metal collars, jewel pommel, and a hand guard on every design.
+	for i = 1, 7 do
+		part("GripBraid", Vector3.new(0.37, 0.37, 0.08), CFrame.new(0, 0, -0.62 + i * 0.17)
+			* CFrame.Angles(0, 0, math.rad(i % 2 == 0 and 35 or -35)), def.wrap, mat.Fabric)
+	end
+	bar("Fuchi", 0, -0.72, 0.46, 0.12, def.guardColor, 0, 0.44)
+	bar("Pommel", 0, 0.8, 0.46, 0.2, def.guardColor, 0, 0.44)
+	gem(0, 0.96, 0.24, edge)
+	bar("Guard", 0, -0.9, 1.4, 0.18, def.guardColor, 0, 0.35)
+
+	if design == "ronin" then
+		katana(0.22, width)
+		for i = 1, 3 do bar("SteelNotch", width * 0.25, -1.25 - i * 0.55, 0.06, 0.14, def.wrap, 35) end
+		bar("LeatherTie", -0.26, 1.13, 0.12, 0.6, def.wrap, -25, 0.1, mat.Fabric)
+	elseif design == "leaf" then
+		katana(0.55, width)
+		for sign = -1, 1, 2 do
+			feather(sign * 0.52, -0.92, 1.15, sign * 45, def.guardColor)
+			feather(sign * 0.19 + 0.5, -0.95 - length * 0.84, 1.1, sign * 19, def.blade)
+		end
+		gem(0, -1.15, 0.34, edge)
+	elseif design == "fang" then
+		bar("BlackSpine", 0, -1 - length / 2, width, length, def.blade)
+		for i = 1, 5 do
+			local z = -1.1 - i * length / 5.7
+			bar("BloodTooth", -width * 0.42, z, 0.35, 0.65, edge, -34, 0.18, mat.Neon)
+		end
+		bar("PiercingTip", 0, -1.1 - length, width * 0.6, 0.8, def.blade, -28)
+		bar("FangGuard", 0.72, -0.85, 0.2, 0.7, edge, 40)
+	elseif design == "crystal" then
+		bar("IceCore", 0, -1 - length / 2, width * 0.5, length, def.blade, 0, 0.22, mat.Glass)
+		for i = 1, 6 do
+			local sign = i % 2 == 0 and 1 or -1
+			feather(sign * 0.32, -1.1 - i * length / 7, 1.25, sign * 22, def.blade)
+		end
+		ring("FrostCrown", 0, -0.95, 0.72, 6, edge)
+		gem(0, -1 - length, 0.42, edge)
+	elseif design == "lightning" then
+		local seg = length / 7
+		for i = 1, 7 do
+			local y = i % 2 == 0 and 0.17 or -0.17
+			bar("Bolt", y, -1 - (i - 0.5) * seg, 0.25, seg + 0.22, edge, i % 2 == 0 and 28 or -28, 0.18, mat.Neon)
+			bar("StormSpine", y + 0.18, -1 - (i - 0.5) * seg, 0.18, seg + 0.22, def.guardColor, i % 2 == 0 and 28 or -28)
+		end
+		ring("StormWheel", 0, -0.9, 0.85, 8, edge)
+		for i = 1, 3 do bar("PommelBolt", i * 0.16, 0.8 + i * 0.28, 0.08, 0.4, edge, -28, 0.1, mat.Neon) end
+	elseif design == "shadow" then
+		katana(-0.28, width)
+		bar("OffhandEdge", 0.7, -2.1, 0.25, 2.2, def.blade, 12)
+		bar("OffhandGlow", 0.55, -2.1, 0.045, 2.2, edge, 12, 0.18, mat.Neon)
+		for i = 1, 5 do ring("ChainLink", 0, 0.9 + i * 0.18, 0.14, 6, def.guardColor, i % 2) end
+		gem(0, 2.05, 0.4, edge)
+	elseif design == "sun" then
+		katana(0, width * 1.6)
+		ring("SunSeal", 0, -1, 1.05, 14, edge)
+		for i = 1, 8 do
+			local a = i * math.pi / 4
+			bar("SolarRay", math.cos(a) * 1.25, -1 + math.sin(a) * 1.25, 0.17, 0.5, def.guardColor, math.deg(a) + 90)
+		end
+		bar("SolarRune", 0, -2.7, 0.18, 2.4, edge, 0, 0.2, mat.Neon)
+	elseif design == "sakura" then
+		katana(0.85, width * 0.8)
+		for i = 1, 5 do
+			local a = i * math.pi * 2 / 5
+			feather(math.cos(a) * 0.52, -0.9 + math.sin(a) * 0.52, 0.74, math.deg(a) + 90, def.guardColor)
+		end
+		bar("SilkRibbon", 0.16, 1.4, 0.17, 1.1, edge, -24, 0.07, mat.Fabric)
+		bar("SilkRibbon", -0.16, 1.4, 0.17, 1.1, def.wrap, 24, 0.07, mat.Fabric)
+	elseif design == "reaper" then
+		bar("ReaperSpine", 0, -1 - length / 2, width * 0.6, length, def.blade)
+		-- Five angled pieces form a visible sickle rather than a recolored katana.
+		for i = 1, 5 do
+			local a = math.rad(-70 + i * 29)
+			local y = 1 + math.cos(a) * 1.1
+			local z = -length + math.sin(a) * 1.1
+			bar("EclipseHook", y, z, 0.35, 0.7, def.blade, math.deg(a), 0.23)
+			bar("EclipseRim", y - 0.14, z, 0.06, 0.7, edge, math.deg(a), 0.26, mat.Neon)
+		end
+		gem(0, -1.2, 0.5, edge)
+	elseif design == "dragon" then
+		katana(0.35, width, -1)
+		katana(-0.35, width, 1)
+		bar("RearGuard", 0, 0.9, 1.4, 0.18, def.guardColor)
+		for sign = -1, 1, 2 do
+			bar("DragonJaw", sign * 0.53, sign * 1.2, 0.35, 0.9, def.guardColor, sign * 25)
+			bar("DragonHorn", sign * 0.73, sign * 0.85, 0.15, 0.8, def.blade, sign * -35)
+			gem(sign * 0.53, sign * 1.5, 0.18, edge)
+		end
+	elseif design == "celestial" then
+		for sign = -1, 1, 2 do
+			bar("SeraphEdge", sign * 0.32, -1 - length / 2, 0.23, length, def.blade, sign * -3)
+			bar("SeraphLight", sign * 0.45, -1 - length / 2, 0.05, length, edge, sign * -3, 0.18, mat.Neon)
+			for i = 1, 3 do feather(sign * (0.45 + i * 0.3), -0.8 - i * 0.15, 1.2 - i * 0.12, sign * 55, def.guardColor) end
+		end
+		ring("AngelHalo", 0, -1.1, 1.05, 16, edge)
+		gem(0, -1 - length, 0.45, edge)
+	elseif design == "phoenix" then
+		katana(0.3, width)
+		for i = 1, 7 do
+			feather(0.25 + i * 0.065, -1.15 - i * length / 8, 1.2, -25 - i * 3, i % 2 == 0 and edge or def.blade)
+		end
+		for sign = -1, 1, 2 do
+			for i = 1, 3 do feather(sign * (0.3 + i * 0.28), -0.72 + i * 0.12, 0.9, sign * 60, def.guardColor) end
+		end
+	elseif design == "cleaver" then
+		bar("ExecutionerSlab", 0, -1 - length / 2, width * 1.4, length, def.blade, 0, 0.35, mat.Slate)
+		bar("OblivionEdge", -width * 0.68, -1 - length / 2, 0.1, length, edge, 0, 0.38, mat.Neon)
+		for i = 1, 5 do bar("BrokenSpine", width * 0.78, -1.4 - i * length / 6, 0.45, 0.55, def.blade, -35, 0.35) end
+		ring("ExecutionSeal", 0, -2, 0.55, 8, edge)
+		bar("IronCrossguard", 0, -0.85, 2.5, 0.36, def.guardColor, 0, 0.5)
+	elseif design == "astral" then
+		for i = 1, 4 do
+			local z = -1.15 - (i - 0.5) * length / 4
+			local w = width * (1.3 - i * 0.17)
+			bar("FloatingStarsteel", 0, z, w, length / 4 - 0.18, def.blade, i % 2 == 0 and 7 or -7, 0.2, mat.Metal)
+			bar("AstralCore", 0, z, 0.1, length / 4 - 0.1, edge, 0, 0.24, mat.Neon)
+			gem(0, z + length / 8, 0.16, edge)
+		end
+		ring("RoyalOrbit", 0, -1, 1.15, 18, def.guardColor)
+		ring("InnerOrbit", 0, -1, 0.75, 12, edge, 0.3)
+		for sign = -1, 1, 2 do feather(sign * 1.1, -1, 1.4, sign * 65, def.guardColor) end
+	end
+
+	-- A stable attachment at each end of the striking edge; only enabled during strikes.
+	local a0 = Instance.new("Attachment")
+	a0.Name, a0.Position, a0.Parent = "TrailBase", Vector3.new(0, 0, -1), handle
+	local a1 = Instance.new("Attachment")
+	a1.Name, a1.Position, a1.Parent = "TrailTip", Vector3.new(0, 0, -1 - length), handle
+	local trail = Instance.new("Trail")
+	trail.Name = "SwingTrail"
+	trail.Attachment0, trail.Attachment1 = a0, a1
+	trail.Lifetime, trail.MinLength = 0.16, 0.05
+	trail.Color = ColorSequence.new(edge, def.trail)
+	trail.Transparency = NumberSequence.new(0.12, 1)
+	trail.WidthScale = NumberSequence.new(1, 0)
+	trail.LightEmission, trail.Enabled = 1, false
+	trail.Parent = handle
+	if def.fx then
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Name = "BladeMotes"
+		emitter.Texture = TEX[def.fx == "fire" and "fire" or "sparkles"]
+		emitter.Color = ColorSequence.new(def.trail)
+		emitter.Size = NumberSequence.new(0.13, 0)
+		emitter.Transparency = NumberSequence.new(0.3, 1)
+		emitter.Lifetime, emitter.Speed = NumberRange.new(0.25, 0.6), NumberRange.new(0.2, 0.8)
+		emitter.Rate, emitter.LightEmission = 4, 0.9
+		emitter.SpreadAngle = Vector2.new(70, 70)
+		emitter.Parent = a1
+	end
+	container:SetAttribute("Design", design)
+	container:SetAttribute("TrailColor", def.trail)
+	return handle
+end
+
+M.TRAINING = {
+	{ name = "Bamboo Fundamentals", requiredTrophies = 0, mult = 1.5, xp = 2,
+		color = c(104, 227, 155), description = "Practice on a wrapped bamboo dummy. 1.5x Spirit / 2 mastery XP per swing." },
+	{ name = "Stone Resolve", requiredTrophies = 25, mult = 3, xp = 4,
+		color = c(98, 186, 255), description = "Split the engraved stone monument. 3x Spirit / 4 mastery XP per swing." },
+	{ name = "Storm Meditation", requiredTrophies = 250, mult = 8, xp = 8,
+		color = c(195, 142, 255), description = "Channel a suspended lightning core. 8x Spirit / 8 mastery XP per swing." },
+	{ name = "Solar Ascension", requiredTrophies = 2000, mult = 20, xp = 16,
+		color = c(255, 190, 70), description = "Master the floating solar blade shrine. 20x Spirit / 16 mastery XP per swing." },
+}
+
+---------------------------------------------------------------- STAGES
+M.STAGES = {
+	{ name = "Training Grounds", minion = "Dojo Dummy", boss = "Sensei Golem", color = c(170, 130, 90) },
+	{ name = "Bamboo Forest", minion = "Bamboo Bandit", boss = "Bandit Chief", color = c(90, 170, 90) },
+	{ name = "Misty Village", minion = "Mist Ronin", boss = "Ronin Captain", color = c(150, 170, 190) },
+	{ name = "Frozen Peak", minion = "Frost Wraith", boss = "Ice Warden", color = c(120, 200, 240) },
+	{ name = "Thunder Plains", minion = "Storm Ninja", boss = "Thunder Daimyo", color = c(230, 210, 70) },
+	{ name = "Crimson Temple", minion = "Blood Monk", boss = "Crimson Abbot", color = c(190, 40, 50) },
+	{ name = "Shadow Valley", minion = "Shade Assassin", boss = "Shadow Lord", color = c(80, 55, 120) },
+	{ name = "Sunken Ruins", minion = "Drowned Samurai", boss = "Tide Shogun", color = c(50, 140, 160) },
+	{ name = "Sky Citadel", minion = "Cloud Guard", boss = "Sky General", color = c(210, 225, 245) },
+	{ name = "Lava Caverns", minion = "Magma Brute", boss = "Magma Titan", color = c(230, 100, 30) },
+	{ name = "Spirit Realm", minion = "Lost Spirit", boss = "Soul Reaper", color = c(150, 120, 230) },
+	{ name = "Dragon Nest", minion = "Drake Cultist", boss = "Elder Drake", color = c(60, 170, 120) },
+	{ name = "Void Rift", minion = "Void Stalker", boss = "Rift Tyrant", color = c(100, 35, 150) },
+	{ name = "Celestial Gate", minion = "Star Sentinel", boss = "Gate Archon", color = c(250, 230, 150) },
+	{ name = "Throne of Swords", minion = "Blade Phantom", boss = "The Sword Emperor", color = c(200, 200, 215) },
+}
+
+-- Each room gets physical scenery and an increasingly valuable boss chest.
+local themes = { "dojo", "bamboo", "village", "snow", "storm", "temple", "shadow", "ruins", "sky", "lava", "spirit", "dragon", "void", "celestial", "throne" }
+for i, stage in M.STAGES do
+	stage.theme = themes[i]
+	stage.trophies = M.roomTrophies(i)
+	stage.reward = M.roomReward(i)
+end
+
+---------------------------------------------------------------- EGGS + PETS
+-- bonus = extra multiplier (0.10 = +10%). The best 3 pets you own are active.
+M.EGGS = {
+	{ name = "Bamboo Egg", cost = 1500 },
+	{ name = "Celestial Egg", cost = 250000 },
+}
+
+M.PETS = {
+	{ name = "Fox Spirit", rarity = "Common", bonus = 0.10, egg = 1, weight = 40 },
+	{ name = "Paper Crane", rarity = "Common", bonus = 0.10, egg = 1, weight = 30 },
+	{ name = "Tiny Oni", rarity = "Uncommon", bonus = 0.25, egg = 1, weight = 15 },
+	{ name = "Koi Wisp", rarity = "Rare", bonus = 0.60, egg = 1, weight = 10 },
+	{ name = "Lantern Cat", rarity = "Epic", bonus = 1.5, egg = 1, weight = 4 },
+	{ name = "Golden Kirin", rarity = "Legendary", bonus = 4, egg = 1, weight = 1 },
+
+	{ name = "Moon Rabbit", rarity = "Uncommon", bonus = 1.0, egg = 2, weight = 40 },
+	{ name = "Storm Fox", rarity = "Rare", bonus = 2.5, egg = 2, weight = 30 },
+	{ name = "Jade Tiger", rarity = "Epic", bonus = 6, egg = 2, weight = 20 },
+	{ name = "Phoenix Chick", rarity = "Legendary", bonus = 20, egg = 2, weight = 8 },
+	{ name = "Celestial Dragon", rarity = "Mythic", bonus = 60, egg = 2, weight = 2 },
+}
+
+M.PET_BY_NAME = {}
+for _, pet in M.PETS do
+	M.PET_BY_NAME[pet.name] = pet
+end
+
+---------------------------------------------------------------- AURAS
+M.AURAS = {
+	{ name = "Ember Glow", cost = 5000, bonus = 0.25, color = c(255, 140, 60) },
+	{ name = "Frost Veil", cost = 120000, bonus = 0.75, color = c(140, 210, 255) },
+	{ name = "Storm Crown", cost = 2500000, bonus = 2, color = c(255, 235, 90) },
+	{ name = "Shadow Mantle", cost = 50000000, bonus = 5, color = c(150, 70, 230) },
+	{ name = "Sakura Storm", cost = 1000000000, bonus = 12, color = c(255, 150, 190) },
+	{ name = "Celestial Radiance", cost = 30000000000, bonus = 30, color = c(255, 240, 170) },
+}
+
+---------------------------------------------------------------- CODES
+-- Add your own codes here (spirit = reward). Each player can redeem a code once.
+M.CODES = {
+	WELCOME = { spirit = 1000 },
+	SWORDS = { spirit = 25000 },
+	LAUNCH = { spirit = 100000 },
+}
+
+return M
+</ProtectedString></Properties></Item></Item><Item class="ServerScriptService" referent="RBX_ServerScriptService"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="ModuleScript" referent="RBX_WorldBuilder"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source">--!strict
+-- WorldBuilder (ModuleScript) -&gt; ServerScriptService. All geometry is original,
+-- built from Roblox primitives; no external assets or Studio plugins are needed.
+-- This module only builds the world and exposes prompts. GameServer owns access,
+-- combat, rewards and training. Decorative gates never block other players.
+
+local Lighting = game:GetService("Lighting")
+local W = {}
+local C = Color3.fromRGB
+local MAT = Enum.Material
+local DARK = C(27, 31, 48)
+local GOLD = C(255, 205, 108)
+local WOOD = C(84, 52, 49)
+local STONE = C(79, 87, 107)
+
+local function part(parent, name, size, cf, color, material, shape, collide)
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored = true
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material or MAT.SmoothPlastic
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.CanCollide = collide ~= false
+	p.CanTouch = false
+	if shape then p.Shape = shape end
+	p.Parent = parent
+	return p
+end
+
+local function model(parent, name)
+	local m = Instance.new("Model")
+	m.Name = name
+	m.Parent = parent
+	return m
+end
+
+local function block(parent, name, size, pos, color, material, rotation, collide)
+	return part(parent, name, size, CFrame.new(pos) * (rotation or CFrame.identity), color, material, nil, collide)
+end
+
+local function cylinder(parent, name, radius, height, pos, color, material, collide)
+	return part(parent, name, Vector3.new(height, radius * 2, radius * 2),
+		CFrame.new(pos) * CFrame.Angles(0, 0, math.pi / 2), color, material, Enum.PartType.Cylinder, collide)
+end
+
+local function ball(parent, name, size, pos, color, material, collide)
+	return part(parent, name, size, CFrame.new(pos), color, material, Enum.PartType.Ball, collide)
+end
+
+local function sign(parent, text, pos, width, height, accent, fontSize)
+	local backing = block(parent, "Sign", Vector3.new(width, height, 0.35), pos, DARK, MAT.SmoothPlastic, nil, false)
+	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		local gui = Instance.new("SurfaceGui")
+		gui.Name = "Lettering"
+		gui.Face = face
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 35
+		gui.LightInfluence = 0
+		gui.Parent = backing
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.fromScale(1, 1)
+		label.Text = text
+		label.TextColor3 = accent or GOLD
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = fontSize or 28
+		label.TextScaled = true
+		label.TextWrapped = true
+		label.Parent = gui
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, 12)
+		padding.PaddingRight = UDim.new(0, 12)
+		padding.PaddingTop = UDim.new(0, 6)
+		padding.PaddingBottom = UDim.new(0, 6)
+		padding.Parent = label
+	end
+	return backing
+end
+
+local function prompt(parent, text, object, distance)
+	local p = Instance.new("ProximityPrompt")
+	p.ActionText = text
+	p.ObjectText = object
+	p.HoldDuration = 0.18
+	p.MaxActivationDistance = distance or 12
+	p.RequiresLineOfSight = false
+	p.KeyboardKeyCode = Enum.KeyCode.E
+	p.GamepadKeyCode = Enum.KeyCode.ButtonX
+	p.Parent = parent
+	return p
+end
+
+local function lantern(parent, pos, accent, tall)
+	local h = tall and 8 or 5
+	local m = model(parent, "SpiritLantern")
+	block(m, "Foot", Vector3.new(2, 0.5, 2), pos + Vector3.new(0, 0.25, 0), STONE, MAT.Slate)
+	block(m, "Post", Vector3.new(0.45, h, 0.45), pos + Vector3.new(0, h / 2, 0), WOOD, MAT.Wood)
+	local lamp = block(m, "PaperGlow", Vector3.new(1.65, 2.1, 1.65), pos + Vector3.new(0, h + 0.1, 0), accent, MAT.Neon, nil, false)
+	block(m, "Cap", Vector3.new(2.2, 0.3, 2.2), pos + Vector3.new(0, h + 1.3, 0), DARK, MAT.Slate)
+	block(m, "Base", Vector3.new(2.05, 0.22, 2.05), pos + Vector3.new(0, h - 1.05, 0), DARK, MAT.Slate)
+	local light = Instance.new("PointLight")
+	light.Color = accent
+	light.Range = 17
+	light.Brightness = 0.65
+	light.Shadows = false
+	light.Parent = lamp
+end
+
+local function torii(parent, pos, accent, width)
+	width = width or 34
+	local m = model(parent, "SpiritGate")
+	for _, side in { -1, 1 } do
+		block(m, "GatePillar", Vector3.new(1.9, 18, 1.9), pos + Vector3.new(side * width / 2, 9, 0), accent, MAT.Wood)
+		block(m, "StoneFoot", Vector3.new(3.8, 1, 3.8), pos + Vector3.new(side * width / 2, 0.5, 0), DARK, MAT.Slate)
+		block(m, "EaveTip", Vector3.new(7, 1.2, 3.5), pos + Vector3.new(side * (width / 2 + 1.5), 19.2, 0), DARK, MAT.Slate,
+			CFrame.Angles(0, 0, math.rad(side * 12)))
+	end
+	block(m, "UpperBeam", Vector3.new(width + 7, 1.5, 3), pos + Vector3.new(0, 18.5, 0), DARK, MAT.Slate)
+	block(m, "LowerBeam", Vector3.new(width + 4, 1, 1.6), pos + Vector3.new(0, 14.3, 0), accent, MAT.Wood)
+	block(m, "Keystone", Vector3.new(2, 3.5, 0.7), pos + Vector3.new(0, 16.1, 0), GOLD, MAT.Metal, nil, false)
+	return m
+end
+
+local function bridge(parent, zNear, zFar, accent)
+	local length = math.abs(zNear - zFar)
+	local z = (zNear + zFar) / 2
+	block(parent, "BridgeDeck", Vector3.new(28, 1.5, length + 2), Vector3.new(0, -0.75, z), WOOD, MAT.WoodPlanks)
+	for _, side in { -1, 1 } do
+		block(parent, "BridgeRail", Vector3.new(0.5, 0.55, length), Vector3.new(side * 13, 4.2, z), accent, MAT.Wood)
+		block(parent, "BridgeRail", Vector3.new(0.4, 0.4, length), Vector3.new(side * 13, 2.2, z), accent, MAT.Wood)
+		for j = 0, 3 do
+			block(parent, "BridgePost", Vector3.new(0.8, 4.5, 0.8), Vector3.new(side * 13, 2.25, zNear + (zFar - zNear) * j / 3), DARK, MAT.Wood)
+		end
+	end
+	for j = 1, 6 do
+		block(parent, "DeckSeam", Vector3.new(25, 0.04, 0.15), Vector3.new(0, 0.025, zNear + (zFar - zNear) * j / 7), C(153, 110, 79), MAT.Wood, nil, false)
+	end
+end
+
+local function tree(parent, pos, foliage, scale, blossoms)
+	scale = scale or 1
+	local m = model(parent, blossoms and "SakuraTree" or "SpiritTree")
+	block(m, "Trunk", Vector3.new(1.7, 9, 1.7) * scale, pos + Vector3.new(0, 4.5, 0) * scale, WOOD, MAT.Wood)
+	for i = 1, 3 do
+		local direction = i * math.pi * 2 / 3
+		local off = Vector3.new(math.cos(direction) * 3.2, 9 + i * 0.8, math.sin(direction) * 3.2) * scale
+		ball(m, "Canopy", Vector3.new(10, 6.8, 10) * scale, pos + off, foliage, MAT.Grass, false)
+	end
+	if blossoms then
+		for i = 1, 3 do
+			block(m, "FallenPetals", Vector3.new(3, 0.07, 2.2) * scale, pos + Vector3.new(-5 + i * 2.8, 0.07, i * 1.8), foliage, MAT.SmoothPlastic, nil, false)
+		end
+	end
+end
+
+local function bamboo(parent, pos, accent, count)
+	local m = model(parent, "BambooGrove")
+	for i = 1, count or 3 do
+		local x, z = (i % 2) * 2.2, i * 1.5
+		local h = 14 + (i % 3) * 2.5
+		cylinder(m, "Bamboo", 0.48, h, pos + Vector3.new(x, h / 2, z), accent, MAT.Wood)
+		for j = 1, 3 do
+			cylinder(m, "Joint", 0.57, 0.22, pos + Vector3.new(x, j * h / 4, z), C(42, 88, 66), MAT.Wood)
+		end
+		block(m, "Leaves", Vector3.new(5, 0.3, 1), pos + Vector3.new(x + 1.4, h - 1.5, z), C(102, 179, 91), MAT.Grass,
+			CFrame.Angles(0, 0, math.rad(25)), false)
+	end
+end
+
+local function rock(parent, pos, size, color, crystal)
+	local m = model(parent, crystal and "SpiritCrystal" or "RockOutcrop")
+	block(m, "Stone", size, pos + Vector3.new(0, size.Y * 0.42, 0), color, crystal and MAT.Glass or MAT.Slate,
+		CFrame.Angles(math.rad(9), math.rad(25), math.rad(11)))
+	if crystal then
+		local shard = block(m, "CrystalCore", size * Vector3.new(0.22, 1.18, 0.2), pos + Vector3.new(0, size.Y * 0.55, 0), color, MAT.Neon,
+			CFrame.Angles(0, 0, math.rad(-12)), false)
+		shard.Transparency = 0.18
+	end
+end
+
+local function shrine(parent, pos, accent, scale)
+	scale = scale or 1
+	local m = model(parent, "WayfarerShrine")
+	block(m, "Plinth", Vector3.new(15, 1, 13) * scale, pos + Vector3.new(0, 0.5, 0) * scale, STONE, MAT.Slate)
+	block(m, "Floor", Vector3.new(12, 0.5, 10) * scale, pos + Vector3.new(0, 1.25, 0) * scale, WOOD, MAT.WoodPlanks)
+	for _, x in { -5, 5 } do
+		for _, z in { -4, 4 } do
+			block(m, "Pillar", Vector3.new(0.9, 8, 0.9) * scale, pos + Vector3.new(x, 5.4, z) * scale, accent, MAT.Wood)
+		end
+	end
+	block(m, "BackWall", Vector3.new(10, 6, 0.6) * scale, pos + Vector3.new(0, 4.5, 4) * scale, WOOD, MAT.Wood)
+	for _, side in { -1, 1 } do
+		block(m, "SlopedRoof", Vector3.new(9, 0.7, 13) * scale, pos + Vector3.new(side * 3.7, 10.5, 0) * scale, DARK, MAT.Slate,
+			CFrame.Angles(0, 0, math.rad(side * -18)))
+	end
+	block(m, "Ridge", Vector3.new(1, 0.8, 14) * scale, pos + Vector3.new(0, 11.7, 0) * scale, GOLD, MAT.Metal)
+end
+
+local THEMES = {
+	"dojo", "bamboo", "village", "ice", "thunder", "temple", "shadow", "water",
+	"sky", "lava", "spirit", "dragon", "void", "celestial", "throne",
+}
+
+local function decorateRoom(parent, center, theme, accent, index)
+	local floor = C(111, 130, 117)
+	local floorMaterial = MAT.Grass
+	if theme == "ice" then floor, floorMaterial = C(204, 226, 238), MAT.Snow
+	elseif theme == "lava" or theme == "void" or theme == "shadow" then floor, floorMaterial = C(53, 46, 65), MAT.Basalt
+	elseif theme == "sky" or theme == "celestial" or theme == "throne" then floor, floorMaterial = C(193, 205, 219), MAT.Marble
+	elseif theme == "temple" or theme == "dojo" or theme == "village" then floor, floorMaterial = C(138, 123, 116), MAT.Cobblestone
+	elseif theme == "water" then floor, floorMaterial = C(84, 121, 132), MAT.Slate
+	elseif theme == "dragon" then floor, floorMaterial = C(92, 118, 100), MAT.Grass end
+
+	block(parent, "IslandFoundation", Vector3.new(110, 8, 128), center + Vector3.new(0, -4, 0), floor, floorMaterial)
+	block(parent, "LowerFoundation", Vector3.new(96, 10, 115), center + Vector3.new(0, -12, 0), DARK, MAT.Slate)
+	block(parent, "CentralRoad", Vector3.new(24, 0.12, 128), center + Vector3.new(0, 0.06, 0), C(163, 160, 159), MAT.Cobblestone, nil, false)
+	for _, side in { -1, 1 } do
+		block(parent, "IslandRim", Vector3.new(1, 0.75, 128), center + Vector3.new(side * 54, 0.4, 0), accent, MAT.Slate)
+		for j = 1, 4 do
+			block(parent, "BoundaryPost", Vector3.new(1.2, 4.5, 1.2), center + Vector3.new(side * 52, 2.25, -70 + j * 28), DARK, MAT.Slate)
+		end
+		block(parent, "BoundaryRail", Vector3.new(0.45, 0.45, 112), center + Vector3.new(side * 52, 3.1, 0), STONE, MAT.Metal)
+		for _, dz in { -41, 37 } do lantern(parent, center + Vector3.new(side * 25, 0, dz), accent, true) end
+	end
+	-- A pair of glyph-lined paths keeps the combat route readable in every biome.
+	for j = 1, 5 do
+		for _, side in { -1, 1 } do
+			block(parent, "PathGlyph", Vector3.new(0.25, 0.04, 6), center + Vector3.new(side * 11.3, 0.15, -60 + j * 20), accent, MAT.Neon, nil, false)
+		end
+	end
+
+	if theme == "dojo" then
+		shrine(parent, center + Vector3.new(-38, 0, -25), accent, 1.1)
+		shrine(parent, center + Vector3.new(38, 0, 22), accent, 1.1)
+		for _, side in { -1, 1 } do
+			for _, dz in { -46, 44 } do tree(parent, center + Vector3.new(side * 40, 0, dz), C(233, 147, 178), 0.8, true) end
+		end
+	elseif theme == "bamboo" then
+		for _, side in { -1, 1 } do
+			for j = 1, 4 do bamboo(parent, center + Vector3.new(side * (35 + j % 2 * 7), 0, -63 + j * 25), C(77, 142, 77), 3) end
+		end
+		rock(parent, center + Vector3.new(-35, 0, 3), Vector3.new(12, 7, 9), C(95, 113, 103))
+	elseif theme == "village" then
+		for _, side in { -1, 1 } do
+			for _, dz in { -29, 28 } do
+				shrine(parent, center + Vector3.new(side * 39, 0, dz), C(114, 148, 167), 1.1)
+			end
+		end
+	elseif theme == "ice" then
+		for _, side in { -1, 1 } do
+			for j = 1, 4 do
+				rock(parent, center + Vector3.new(side * (35 + (j % 2) * 7), 0, -65 + j * 25), Vector3.new(7, 9 + j * 2, 7), C(145, 216, 245), true)
+			end
+		end
+		for _, side in { -1, 1 } do
+			block(parent, "FrozenPool", Vector3.new(17, 0.12, 30), center + Vector3.new(side * 34, 0.09, 8), C(129, 206, 232), MAT.Ice, nil, false)
+		end
+	elseif theme == "thunder" then
+		for _, side in { -1, 1 } do
+			for _, dz in { -35, 29 } do
+				local p = center + Vector3.new(side * 38, 0, dz)
+				cylinder(parent, "StormPylon", 2, 13, p + Vector3.new(0, 6.5, 0), DARK, MAT.Metal)
+				ball(parent, "StormOrb", Vector3.new(5, 5, 5), p + Vector3.new(0, 15, 0), accent, MAT.Neon, false)
+				for j = 1, 3 do
+					block(parent, "LightningRune", Vector3.new(0.3, 4.5, 0.5), p + Vector3.new(0, 9 + j * 3, -2.2), GOLD, MAT.Neon, CFrame.Angles(0, 0, math.rad(j % 2 == 0 and -35 or 35)), false)
+				end
+			end
+		end
+	elseif theme == "temple" then
+		shrine(parent, center + Vector3.new(-38, 0, -24), C(184, 54, 65), 1.35)
+		shrine(parent, center + Vector3.new(38, 0, 22), C(184, 54, 65), 1.35)
+		for _, dz in { -40, 32 } do torii(parent, center + Vector3.new(0, 0, dz), accent, 37) end
+	elseif theme == "shadow" or theme == "spirit" then
+		for _, side in { -1, 1 } do
+			for j = 1, 3 do
+				tree(parent, center + Vector3.new(side * (38 + j % 2 * 5), 0, -63 + j * 33), theme == "shadow" and C(88, 59, 122) or C(159, 151, 216), 1.05)
+				ball(parent, "SpiritWisp", Vector3.new(1.7, 1.7, 1.7), center + Vector3.new(side * 30, 5 + j, -65 + j * 33), accent, MAT.Neon, false)
+			end
+		end
+	elseif theme == "water" then
+		for _, side in { -1, 1 } do
+			local water = block(parent, "TideCanal", Vector3.new(19, 0.18, 110), center + Vector3.new(side * 38, 0.12, 0), C(58, 167, 185), MAT.Glass, nil, false)
+			water.Transparency = 0.22
+			for j = 1, 4 do
+				local p = center + Vector3.new(side * 39, 0, -65 + j * 27)
+				cylinder(parent, "RuinedColumn", 1.7, 7 + j % 3 * 3, p + Vector3.new(0, 4, 0), C(135, 165, 168), MAT.Marble)
+			end
+		end
+	elseif theme == "sky" or theme == "celestial" then
+		for _, side in { -1, 1 } do
+			for j = 1, 3 do
+				local p = center + Vector3.new(side * 40, 0, -62 + j * 32)
+				cylinder(parent, "MarbleColumn", 1.4, 15, p + Vector3.new(0, 7.5, 0), C(228, 232, 239), MAT.Marble)
+				cylinder(parent, "Capital", 2.3, 0.6, p + Vector3.new(0, 15.2, 0), GOLD, MAT.Metal)
+				ball(parent, "Cloud", Vector3.new(18, 7, 13), p + Vector3.new(side * 16, -5, 0), C(225, 231, 242), MAT.SmoothPlastic, false)
+			end
+		end
+		if theme == "celestial" then
+			for j = 1, 8 do
+				local angle = j / 8 * math.pi * 2
+				local pos = center + Vector3.new(math.cos(angle) * 22, 26 + math.sin(angle) * 13, -50)
+				block(parent, "AstralRingSegment", Vector3.new(9, 0.65, 0.65), pos, GOLD, MAT.Neon, CFrame.Angles(0, 0, angle + math.pi / 2), false)
+			end
+		end
+	elseif theme == "lava" then
+		for _, side in { -1, 1 } do
+			block(parent, "LavaChannel", Vector3.new(17, 0.14, 112), center + Vector3.new(side * 39, 0.1, 0), C(255, 93, 32), MAT.Neon, nil, false)
+			for j = 1, 4 do
+				rock(parent, center + Vector3.new(side * (33 + j % 2 * 10), 0, -67 + j * 25), Vector3.new(8, 8 + j * 2, 9), C(54, 48, 57))
+			end
+		end
+	elseif theme == "dragon" then
+		for _, side in { -1, 1 } do
+			local p = center + Vector3.new(side * 37, 0, -19)
+			rock(parent, p, Vector3.new(15, 12, 18), C(68, 100, 88))
+			-- Stylized original guardian dragon: coiled plinth, angular head, twin antlers.
+			ball(parent, "DragonHead", Vector3.new(7, 5, 9), p + Vector3.new(0, 13, -2), C(72, 149, 117), MAT.Slate)
+			block(parent, "DragonJaw", Vector3.new(5, 2, 6), p + Vector3.new(0, 11, -6), C(88, 166, 130), MAT.Slate)
+			for _, hornSide in { -1, 1 } do
+				block(parent, "GoldenAntler", Vector3.new(0.8, 7, 0.8), p + Vector3.new(hornSide * 2, 18, 0), GOLD, MAT.Metal, CFrame.Angles(0, 0, math.rad(hornSide * -20)))
+				ball(parent, "DragonEye", Vector3.new(0.8, 0.8, 0.8), p + Vector3.new(hornSide * 2, 13.7, -5.5), GOLD, MAT.Neon, false)
+			end
+		end
+	elseif theme == "void" then
+		for _, side in { -1, 1 } do
+			for j = 1, 4 do
+				local p = center + Vector3.new(side * (36 + j % 2 * 9), 3 + j % 2 * 3, -65 + j * 25)
+				rock(parent, p, Vector3.new(5, 12, 5), accent, true)
+			end
+		end
+		for j = 1, 7 do
+			local angle = j / 7 * math.pi * 2
+			block(parent, "RiftFrame", Vector3.new(8, 0.9, 2), center + Vector3.new(math.cos(angle) * 11, 15 + math.sin(angle) * 11, -54), accent, MAT.Neon, CFrame.Angles(0, 0, angle + math.pi / 2), false)
+		end
+	elseif theme == "throne" then
+		for _, side in { -1, 1 } do
+			for j = 1, 4 do
+				local p = center + Vector3.new(side * 39, 0, -65 + j * 25)
+				cylinder(parent, "ImperialPillar", 1.4, 18, p + Vector3.new(0, 9, 0), C(201, 204, 223), MAT.Marble)
+				block(parent, "SwordMonumentBlade", Vector3.new(0.4, 9, 1.5), p + Vector3.new(-side * 7, 7, 0), C(230, 232, 243), MAT.Metal)
+				block(parent, "SwordMonumentGuard", Vector3.new(0.7, 0.8, 5), p + Vector3.new(-side * 7, 11.5, 0), GOLD, MAT.Metal)
+			end
+		end
+		block(parent, "ImperialThrone", Vector3.new(10, 13, 3), center + Vector3.new(0, 6.5, -60), GOLD, MAT.Metal)
+		block(parent, "VelvetBack", Vector3.new(7, 9, 0.4), center + Vector3.new(0, 7.5, -58.3), C(92, 45, 124), MAT.Fabric)
+		block(parent, "ThroneSeat", Vector3.new(10, 2, 6), center + Vector3.new(0, 2.5, -57), GOLD, MAT.Metal)
+	end
+	-- Each boss has a visible floor seal without interfering with movement.
+	cylinder(parent, "BossSealOuter", 10, 0.08, center + Vector3.new(0, 0.1, -47), accent, MAT.Neon, false)
+	cylinder(parent, "BossSealInner", 9.4, 0.09, center + Vector3.new(0, 0.15, -47), floor, floorMaterial, false)
+	for j = 1, 4 do
+		local angle = j * math.pi / 2
+		block(parent, "BossSealRune", Vector3.new(2, 0.05, 2), center + Vector3.new(math.cos(angle) * 7.5, 0.22, -47 + math.sin(angle) * 7.5), accent, MAT.Neon, CFrame.Angles(0, math.rad(45), 0), false)
+	end
+end
+
+local function trainingStation(parent, definition, id, x)
+	local center = Vector3.new(x, 0, 35)
+	local m = model(parent, "Training_" .. id)
+	m:SetAttribute("TrainingId", id)
+	local accent = definition.color or C(126, 218, 221)
+	cylinder(m, "TrainingZone", 11.5, 0.12, center + Vector3.new(0, 0.08, 0), accent, MAT.Neon, false)
+	cylinder(m, "Mat", 10.9, 0.14, center + Vector3.new(0, 0.12, 0), C(49, 55, 69), MAT.Slate, false)
+	local station = center + Vector3.new(0, 0, -4)
+	if id == 1 then
+		block(m, "PracticePost", Vector3.new(1.5, 6.5, 1.5), station + Vector3.new(0, 3.25, 0), WOOD, MAT.Wood)
+		block(m, "CrossArms", Vector3.new(7, 1.15, 1.15), station + Vector3.new(0, 4, 0), C(161, 120, 80), MAT.Wood)
+		ball(m, "PracticeMask", Vector3.new(2.8, 2.8, 2.8), station + Vector3.new(0, 6.8, 0), C(235, 208, 161), MAT.Wood)
+		for _, side in { -1, 1 } do block(m, "MaskEye", Vector3.new(0.4, 0.2, 0.1), station + Vector3.new(side * 0.6, 6.9, 1.34), DARK, MAT.SmoothPlastic, nil, false) end
+	elseif id == 2 then
+		cylinder(m, "BoulderBase", 4.2, 1.4, station + Vector3.new(0, 0.7, 0), STONE, MAT.Slate)
+		rock(m, station + Vector3.new(0, 1.4, 0), Vector3.new(6, 5, 5), C(127, 151, 155))
+		for j = 1, 3 do block(m, "CutMarks", Vector3.new(0.1, 3.6, 0.2), station + Vector3.new(-1.5 + j * 0.7, 3.8, 2.55), accent, MAT.Neon, CFrame.Angles(0, 0, math.rad(-23)), false) end
+	elseif id == 3 then
+		for _, side in { -1, 1 } do
+			block(m, "FocusPillar", Vector3.new(1.3, 9, 1.3), station + Vector3.new(side * 4, 4.5, 0), DARK, MAT.Metal)
+			ball(m, "FocusCrystal", Vector3.new(2.5, 3.5, 2.5), station + Vector3.new(side * 4, 10, 0), accent, MAT.Neon, false)
+		end
+		ball(m, "SuspendedCore", Vector3.new(4, 4, 4), station + Vector3.new(0, 6.3, 0), accent, MAT.Neon, false)
+		for j = 1, 6 do
+			local angle = j * math.pi / 3
+			block(m, "FocusHalo", Vector3.new(2.6, 0.25, 0.25), station + Vector3.new(math.cos(angle) * 3.8, 6.3 + math.sin(angle) * 3.8, 0), GOLD, MAT.Metal, CFrame.Angles(0, 0, angle + math.pi / 2), false)
+		end
+	else
+		cylinder(m, "AscensionPlinth", 4.5, 1.2, station + Vector3.new(0, 0.6, 0), DARK, MAT.Marble)
+		for j = 1, 5 do
+			local angle = j / 5 * math.pi * 2
+			rock(m, station + Vector3.new(math.cos(angle) * 3.8, 2, math.sin(angle) * 3.8), Vector3.new(0.9, 4, 0.9), accent, true)
+		end
+		ball(m, "AscensionHeart", Vector3.new(3.6, 3.6, 3.6), station + Vector3.new(0, 5.5, 0), GOLD, MAT.Neon, false)
+	end
+	local text = definition.name .. "\nx" .. tostring(definition.mult or 1) .. " SPIRIT • " .. tostring(definition.xp or 1) .. " MASTERY XP"
+	text ..= "\n" .. (definition.requiredTrophies == 0 and "FREE TRAINING" or tostring(definition.requiredTrophies) .. " TROPHIES REQUIRED")
+	sign(m, text, center + Vector3.new(0, 11.8, -5), 17, 4.7, accent)
+	-- Interaction stays at character height, reachable across the training mat.
+	local interaction = block(m, "TrainingPrompt", Vector3.new(1, 1, 1), center + Vector3.new(0, 2, 0), accent, MAT.SmoothPlastic, nil, false)
+	interaction.Transparency = 1
+	interaction.CanQuery = false
+	local p = prompt(interaction, "Start training", definition.name, 16)
+	p:SetAttribute("TrainingId", id)
+	return { id = id, center = center, radius = 12, prompt = p }
+end
+
+local function hubStand(parent, name, pos, color, subtitle)
+	local m = model(parent, name .. "Stand")
+	cylinder(m, "Plinth", 9, 0.7, pos + Vector3.new(0, 0.35, 0), STONE, MAT.Slate)
+	cylinder(m, "Trim", 7.5, 0.74, pos + Vector3.new(0, 0.4, 0), color, MAT.Neon, false)
+	cylinder(m, "Top", 7, 0.8, pos + Vector3.new(0, 0.45, 0), DARK, MAT.Slate)
+	local plaque = sign(m, string.upper(name) .. "\n" .. subtitle, pos + Vector3.new(0, 10, -3.5), 17, 4, color)
+	return m, prompt(plaque, "Open " .. name, "Bladebound Sanctuary", 18)
+end
+
+function W.build(SD)
+	local previous = workspace:FindFirstChild("AnimeSwordWorld")
+	if previous then previous:Destroy() end
+	local folder = Instance.new("Folder")
+	folder.Name = "AnimeSwordWorld"
+	folder.Parent = workspace
+	local result = {
+		folder = folder,
+		spawn = CFrame.new(0, 4, 45),
+		rooms = {}, training = {}, roomPrompts = {}, returnPrompts = {}, hubPrompts = {},
+	}
+
+	Lighting.ClockTime = 16.5
+	Lighting.Brightness = 2.4
+	Lighting.Ambient = C(123, 128, 155)
+	Lighting.OutdoorAmbient = C(146, 154, 180)
+	Lighting.EnvironmentDiffuseScale = 0.6
+	Lighting.EnvironmentSpecularScale = 0.6
+	Lighting.GlobalShadows = true
+	local atmosphere = Lighting:FindFirstChild("SpiritbladeAtmosphere")
+	if not atmosphere then atmosphere = Instance.new("Atmosphere"); atmosphere.Name = "SpiritbladeAtmosphere"; atmosphere.Parent = Lighting end
+	atmosphere.Density = 0.24
+	atmosphere.Offset = 0.15
+	atmosphere.Color = C(193, 210, 236)
+	atmosphere.Decay = C(114, 123, 153)
+	atmosphere.Haze = 0.75
+	local bloom = Lighting:FindFirstChild("SpiritbladeBloom")
+	if not bloom then bloom = Instance.new("BloomEffect"); bloom.Name = "SpiritbladeBloom"; bloom.Parent = Lighting end
+	bloom.Intensity, bloom.Size, bloom.Threshold = 0.24, 22, 1.3
+
+	local hub = model(folder, "SpiritbladeSanctuary")
+	block(hub, "SanctuaryIsland", Vector3.new(142, 8, 160), Vector3.new(0, -4, 0), C(128, 142, 133), MAT.Grass)
+	block(hub, "SanctuaryUnderside", Vector3.new(124, 14, 142), Vector3.new(0, -14, 0), DARK, MAT.Slate)
+	block(hub, "SanctuaryPlaza", Vector3.new(126, 0.15, 125), Vector3.new(0, 0.075, 0), C(170, 166, 160), MAT.Cobblestone, nil, false)
+	block(hub, "RoadToAdventure", Vector3.new(28, 0.18, 160), Vector3.new(0, 0.1, 0), C(207, 196, 178), MAT.Cobblestone, nil, false)
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "SanctuarySpawn"
+	spawn.Size = Vector3.new(9, 0.25, 9)
+	spawn.CFrame = CFrame.new(0, 0.28, 62)
+	spawn.Transparency = 1
+	spawn.Anchored = true
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.CanCollide = false
+	spawn.Parent = hub
+	torii(hub, Vector3.new(0, 0, -64), C(178, 66, 80), 38)
+	sign(hub, "BLADEBOUND\nSPIRIT TRIALS • 15 realms. One sovereign.", Vector3.new(0, 24, -64), 43, 5, GOLD)
+	sign(hub, "COMBAT ROOMS  ↑\nDefeat each guardian to unlock the next realm", Vector3.new(0, 10, -45), 26, 4.2, C(162, 226, 245))
+	for _, side in { -1, 1 } do
+		for _, z in { -63, 61 } do tree(hub, Vector3.new(side * 60, 0, z), C(244, 153, 186), 1.25, true) end
+		for _, z in { -44, 5, 64 } do lantern(hub, Vector3.new(side * 63, 0, z), GOLD, true) end
+		block(hub, "SanctuaryRail", Vector3.new(0.6, 0.8, 152), Vector3.new(side * 69, 3, 0), WOOD, MAT.Wood)
+		for j = 1, 7 do block(hub, "SanctuaryPost", Vector3.new(1, 4.5, 1), Vector3.new(side * 69, 2.25, -87 + j * 22), WOOD, MAT.Wood) end
+	end
+	local trainingX = { -44, -16, 16, 44 }
+	for i, def in SD.TRAINING do result.training[i] = trainingStation(hub, def, i, trainingX[i]) end
+
+	local swords, swordsPrompt = hubStand(hub, "Swords", Vector3.new(-41, 0, -27), C(112, 214, 247), "FORGE YOUR LEGEND")
+	result.hubPrompts.Swords = swordsPrompt
+	for i, swordIndex in { 2, 7, 14 } do
+		local def = SD.SWORDS[swordIndex]
+		if def then
+			local display = Instance.new("Model")
+			display.Name = "Display_" .. def.name
+			SD.buildSword(def, display)
+			for _, obj in display:GetDescendants() do
+				if obj:IsA("BasePart") then obj.Anchored = true; obj.CanCollide = false end
+				if obj:IsA("ParticleEmitter") then obj.Rate = math.min(obj.Rate, 5) end
+			end
+			display.Parent = swords
+			display:PivotTo(CFrame.new(-47 + i * 3, 4, -27) * CFrame.Angles(math.rad(-90), 0, math.rad(-20 + i * 10)))
+		end
+	end
+	local pets, petsPrompt = hubStand(hub, "Pets", Vector3.new(41, 0, -27), C(245, 167, 214), "SPIRIT COMPANIONS")
+	result.hubPrompts.Pets = petsPrompt
+	for i = 1, 3 do
+		local egg = ball(pets, "SpiritEgg", Vector3.new(2.7, 3.8, 2.7), Vector3.new(35 + i * 3, 3, -27), ({ C(156, 230, 191), C(243, 178, 218), GOLD })[i], MAT.Glass, false)
+		block(pets, "EggBand", Vector3.new(2.8, 0.25, 2.8), egg.Position, GOLD, MAT.Metal, CFrame.Angles(0, math.rad(45), 0), false)
+	end
+	local auras, auraPrompt = hubStand(hub, "Auras", Vector3.new(41, 0, -3), C(185, 157, 249), "AWAKEN YOUR SPIRIT")
+	result.hubPrompts.Auras = auraPrompt
+	for j = 1, 8 do
+		local angle = j / 8 * math.pi * 2
+		ball(auras, "AuraMote", Vector3.new(0.7, 0.7, 0.7), Vector3.new(41 + math.cos(angle) * 4.2, 4.8 + math.sin(angle) * 3, -3), C(185, 157, 249), MAT.Neon, false)
+	end
+	sign(hub, "TRAINING COURT\nUse E at a station, then swing to gain Spirit and sword mastery.\nMastery permanently raises that sword's training increment.", Vector3.new(-41, 6, 0), 23, 5.5, C(157, 232, 208))
+
+	bridge(folder, -80, -136, C(181, 75, 85))
+	for i, def in SD.STAGES do
+		local center = Vector3.new(0, 0, -(i * 160 + 40))
+		local room = model(folder, ("Room_%02d_%s"):format(i, def.name))
+		room:SetAttribute("RoomIndex", i)
+		local theme = THEMES[i] -- Stable biome identity even when stage display names are customized.
+		local accent = def.color
+		decorateRoom(room, center, theme, accent, i)
+		local entry = CFrame.new(center + Vector3.new(0, 4, 72))
+		local gate = torii(room, center + Vector3.new(0, 0, 61), accent, 34)
+		sign(gate, ("ROOM %02d • %s\n+%s TROPHIES • +%s SPIRIT / CLEAR"):format(i, string.upper(def.name), SD.fmt(SD.roomTrophies(i)), SD.fmt(SD.roomReward(i))), center + Vector3.new(0, 23, 61), 42, 4.8, accent)
+		local marker = block(room, "EntrancePrompt", Vector3.new(1, 1, 1), center + Vector3.new(0, 3, 57), accent, MAT.SmoothPlastic, nil, false)
+		marker.Transparency = 1
+		local roomPrompt = prompt(marker, "Enter room", def.name, 18)
+		roomPrompt:SetAttribute("RoomIndex", i)
+		result.roomPrompts[i] = roomPrompt
+		if i &gt; 1 then sign(gate, "REQUIRES ROOM " .. (i - 1) .. " CLEAR", center + Vector3.new(0, 12.2, 61), 23, 1.5, C(221, 224, 235)) end
+		local returnStone = cylinder(room, "SanctuaryRecall", 3.1, 0.3, center + Vector3.new(-33, 0.2, 51), C(121, 192, 231), MAT.Neon, false)
+		sign(room, "RETURN\nSANCTUARY", center + Vector3.new(-33, 4.3, 49), 9, 3, C(155, 221, 249))
+		result.returnPrompts[i] = prompt(returnStone, "Return to sanctuary", "Recall sigil", 10)
+		local enemySpawns = {}
+		for step, offset in { Vector3.new(-6, 3.2, 28), Vector3.new(6, 3.2, 12), Vector3.new(-6, 3.2, -4), Vector3.new(6, 3.2, -20), Vector3.new(-5, 3.2, -35), Vector3.new(0, 3.2, -49) } do
+			enemySpawns[step] = CFrame.new(center + offset) * CFrame.Angles(0, math.pi, 0)
+			if step &lt; 6 then
+				cylinder(room, "EnemySeal_" .. step, 3.2, 0.06, center + Vector3.new(offset.X, 0.12, offset.Z), accent, MAT.Neon, false)
+			end
+		end
+		result.rooms[i] = {
+			center = center, spawn = CFrame.new(center + Vector3.new(0, 4, 50)),
+			enemySpawns = enemySpawns, entry = entry,
+		}
+		if i &lt; #SD.STAGES then bridge(folder, center.Z - 64, center.Z - 96, accent) end
+	end
+	return result
+end
+
+return W
+</ProtectedString></Properties></Item><Item class="Script" referent="RBX_GameServer"><Properties><string name="Name">GameServer</string><ProtectedString name="Source">-- GameServer (Script) -&gt; ServerScriptService
+-- Requires SwordData in ReplicatedStorage and WorldBuilder beside this script.
+-- All currency, training, room access, melee range, rewards and saves are server-owned.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
+
+local SD = require(ReplicatedStorage:WaitForChild("SwordData"))
+local WorldBuilder = require(script.Parent:WaitForChild("WorldBuilder"))
+local world = WorldBuilder.build(SD)
+local store = DataStoreService:GetDataStore("AnimeSwordSim_v1") -- preserves existing saves
+local function remote(name)
+	local event = ReplicatedStorage:FindFirstChild(name)
+	assert(not event or event:IsA("RemoteEvent"), name .. " must be a RemoteEvent")
+	if not event then
+		event = Instance.new("RemoteEvent")
+		event.Name = name
+		event.Parent = ReplicatedStorage
+	end
+	return event
+end
+local actionRemote = remote("GameAction")
+local syncRemote = remote("GameSync")
+local fxFolder = Instance.new("Folder")
+fxFolder.Name = "SwordEncounters"
+fxFolder.Parent = workspace
+
+local GOLD = Color3.fromRGB(255, 213, 95)
+local CYAN = Color3.fromRGB(113, 236, 255)
+local RED = Color3.fromRGB(255, 113, 126)
+local LIMIT = 1e100 -- finite DataStore-safe economy ceiling
+local data, dirty, versions = {}, {}, {}
+local fights, lastRoom, training = {}, {}, {}
+local lastSwing, combos, lastAction, lastRequest = {}, {}, {}, {}
+local inGroup, noSave, saveHealthy, saving, loaded = {}, {}, {}, {}, {}
+local closing = false
+local SESSION_ID = game.JobId .. ":" .. HttpService:GenerateGUID(false)
+local SESSION_LEASE = 180 -- refreshed every 60s; expired crashed-server claims may be reclaimed
+local released, sessionBlocked = {}, {}
+
+local function finite(n)
+	return type(n) == "number" and n == n and n &gt; -math.huge and n &lt; math.huge
+end
+local function number(n, fallback, maximum)
+	return finite(n) and math.clamp(n, 0, maximum or LIMIT) or fallback
+end
+local function index(n, maximum)
+	return finite(n) and n % 1 == 0 and n &gt;= 1 and n &lt;= maximum and n or nil
+end
+local function defaultData()
+	return {
+		spirit = 0, trophies = 0, rebirths = 0, stage = 1,
+		owned = { ["1"] = true }, equipped = 1,
+		pets = {}, auras = {}, aura = 0, codes = {},
+		mastery = 0, masteryXP = 0, lastSeen = os.time(),
+	}
+end
+local function sanitize(raw)
+	local d = defaultData()
+	if type(raw) ~= "table" then return d end
+	d.spirit = number(raw.spirit, 0)
+	d.trophies = math.floor(number(raw.trophies, 0, 1e12))
+	d.rebirths = math.floor(number(raw.rebirths, 0, 100))
+	d.stage = index(raw.stage, #SD.STAGES) or 1
+	d.mastery = math.floor(number(raw.mastery, 0, SD.MAX_MASTERY or 1000))
+	d.masteryXP = number(raw.masteryXP, 0, SD.masteryNeed(d.mastery) - 1)
+	d.lastSeen = math.floor(number(raw.lastSeen, os.time(), os.time()))
+	if type(raw.owned) == "table" then
+		for i = 1, #SD.SWORDS do
+			if raw.owned[tostring(i)] == true then d.owned[tostring(i)] = true end
+		end
+	end
+	local equipped = index(raw.equipped, #SD.SWORDS)
+	if equipped and d.owned[tostring(equipped)] then d.equipped = equipped end
+	if type(raw.auras) == "table" then
+		for i = 1, #SD.AURAS do
+			if raw.auras[tostring(i)] == true then d.auras[tostring(i)] = true end
+		end
+	end
+	local aura = index(raw.aura, #SD.AURAS)
+	if aura and d.auras[tostring(aura)] then d.aura = aura end
+	if type(raw.pets) == "table" then
+		for name in SD.PET_BY_NAME do
+			d.pets[name] = math.floor(number(raw.pets[name], 0, 100000))
+		end
+	end
+	if type(raw.codes) == "table" then
+		for code in SD.CODES do
+			if raw.codes[code] == true then d.codes[code] = true end
+		end
+	end
+	return d
+end
+local function copySave(d)
+	local copy = {}
+	for k, v in d do
+		copy[k] = type(v) == "table" and table.clone(v) or v
+	end
+	copy.lastSeen = os.time()
+	return copy
+end
+local function bump(p)
+	versions[p] = (versions[p] or 0) + 1
+	dirty[p] = true
+end
+local function toast(p, text, color)
+	if p.Parent == Players then syncRemote:FireClient(p, "Toast", text, color or CYAN) end
+end
+local function getChar(p)
+	local char = p.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if root and hum and hum.Health &gt; 0 then return char, hum, root end
+end
+local function near(p, position, radius)
+	local _, _, root = getChar(p)
+	return root and (root.Position - position).Magnitude &lt;= radius
+end
+local function stopTraining(p)
+	if training[p] then training[p] = nil; bump(p) end
+end
+local function currentTraining(p)
+	local id = training[p]
+	local station = id and world.training[id]
+	local def = id and SD.TRAINING[id]
+	if station and def and data[p] and data[p].trophies &gt;= def.requiredTrophies
+		and near(p, station.center, station.radius + 3) and not fights[p] then
+		return id, def
+	end
+	stopTraining(p)
+	return 0, nil
+end
+local function petBonus(d)
+	local entries = {}
+	for name, count in d.pets do
+		local pet = SD.PET_BY_NAME[name]
+		if pet and count &gt; 0 then table.insert(entries, {pet.bonus, count}) end
+	end
+	table.sort(entries, function(a, b) return a[1] &gt; b[1] end)
+	local sum, slots = 0, 3
+	for _, entry in entries do
+		local n = math.min(slots, entry[2])
+		sum += entry[1] * n
+		slots -= n
+		if slots &lt;= 0 then break end
+	end
+	return sum
+end
+local function getMult(p)
+	local d = data[p]
+	if not d then return 1 end
+	local m = SD.SWORDS[d.equipped].mult * SD.masteryMultiplier(d.mastery)
+	m *= 1 + petBonus(d)
+	m *= 1 + (d.aura &gt; 0 and SD.AURAS[d.aura].bonus or 0)
+	m *= 1 + d.rebirths * 0.5
+	m *= 1 + d.trophies * 0.01
+	if inGroup[p] then m *= 1.1 end
+	return math.min(m, LIMIT / 100)
+end
+local function addSpirit(p, amount)
+	local d = data[p]
+	if d then d.spirit = math.min(LIMIT, d.spirit + amount); dirty[p] = true end
+end
+local function updateLeaderstats(p)
+	local ls = p:FindFirstChild("leaderstats")
+	local d = data[p]
+	if not ls or not d then return end
+	ls.Power.Value = math.floor(getMult(p))
+	ls.Trophies.Value = d.trophies
+	ls.Rebirths.Value = d.rebirths
+end
+local function snapshot(p)
+	local d = data[p]
+	local id, def = currentTraining(p)
+	local mult = getMult(p)
+	local run = fights[p]
+	local enemy = run and run.enemy
+	local fight = run and {
+		stage = run.stage, step = run.step, total = SD.STAGE_MINIONS + 1,
+		boss = run.step == SD.STAGE_MINIONS + 1,
+		hp = enemy and enemy.hp or 0, maxHp = enemy and enemy.maxHp or 1,
+		position = enemy and enemy.root.Position or world.rooms[run.stage].center,
+		name = enemy and enemy.model.Name or "Next opponent...",
+	} or nil
+	return {
+		spirit = d.spirit, trophies = d.trophies, rebirths = d.rebirths, stage = d.stage,
+		owned = d.owned, equipped = d.equipped, pets = d.pets, auras = d.auras, aura = d.aura,
+		mult = mult, damage = math.floor(mult * 4), swingGain = math.max(1, math.floor(mult * (def and def.mult or 1))),
+		mastery = d.mastery, masteryXP = d.masteryXP, masteryNeed = SD.masteryNeed(d.mastery),
+		masteryMult = SD.masteryMultiplier(d.mastery), training = id, trainingMult = def and def.mult or 1,
+		rebirthCost = SD.rebirthCost(d.rebirths), fight = fight, ver = versions[p] or 0,
+		saving = noSave[p] ~= true and saveHealthy[p] ~= false,
+	}
+end
+
+---------------------------------------------------------------- EQUIPMENT
+local function giveSword(p)
+	local d = data[p]
+	local char, hum = getChar(p)
+	local backpack = p:FindFirstChildOfClass("Backpack")
+	if not d or not hum or not backpack then return end
+	for _, container in {backpack, char} do
+		for _, tool in container:GetChildren() do
+			if tool:IsA("Tool") and tool:GetAttribute("IsSword") then tool:Destroy() end
+		end
+	end
+	local def = SD.SWORDS[d.equipped]
+	local tool = Instance.new("Tool")
+	tool.Name = def.name
+	tool.ToolTip = "Swing • " .. def.name
+	tool.CanBeDropped = false
+	tool.RequiresHandle = true
+	tool:SetAttribute("IsSword", true)
+	tool:SetAttribute("SwordIndex", d.equipped)
+	SD.buildSword(def, tool)
+	-- Tool.Activated is handled by GameClient. Never award both here and in the remote.
+	tool.Parent = backpack
+	hum:EquipTool(tool)
+end
+local function applyAura(p)
+	local d = data[p]
+	local _, _, root = getChar(p)
+	if not d or not root then return end
+	for _, item in root:GetChildren() do
+		if item:GetAttribute("AuraFx") then item:Destroy() end
+	end
+	if d.aura == 0 then return end
+	local def = SD.AURAS[d.aura]
+	local emitter = Instance.new("ParticleEmitter")
+	emitter:SetAttribute("AuraFx", true)
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Color = ColorSequence.new(def.color)
+	emitter.Size = NumberSequence.new(0.55, 0)
+	emitter.Lifetime = NumberRange.new(0.6, 1)
+	emitter.Rate = 16
+	emitter.Speed = NumberRange.new(1, 3)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.LightEmission = 1
+	emitter.Parent = root
+	local light = Instance.new("PointLight")
+	light:SetAttribute("AuraFx", true)
+	light.Color, light.Range, light.Brightness = def.color, 9, 0.7
+	light.Parent = root
+end
+
+---------------------------------------------------------------- ENEMY MODELS / FEEDBACK
+local function part(parent, name, size, cf, color, material)
+	local p = Instance.new("Part")
+	p.Name, p.Size, p.CFrame = name, size, cf
+	p.Color = color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.CanCollide, p.CanTouch, p.CanQuery = false, false, false
+	p.Massless = true
+	p.Parent = parent
+	return p
+end
+local function buildEnemy(p, stage, boss, cf)
+	local def = SD.STAGES[stage]
+	local scale = boss and 1.6 or 1
+	local model = Instance.new("Model")
+	model.Name = boss and def.boss or def.minion
+	model:SetAttribute("OwnerUserId", p.UserId)
+	model:SetAttribute("IsEnemy", true)
+	local dark = Color3.fromRGB(25, 27, 43)
+	local metal = Color3.fromRGB(189, 200, 219)
+	local root = part(model, "Root", Vector3.new(2, 2.4, 1) * scale, cf, def.color)
+	root.Anchored = true
+	model.PrimaryPart = root
+	local function add(name, size, position, color, material, rotation)
+		local offset = CFrame.new(position * scale) * (rotation or CFrame.identity)
+		local item = part(model, name, size * scale, cf * offset, color, material)
+		local weld = Instance.new("Weld")
+		weld.Part0, weld.Part1, weld.C0 = root, item, offset
+		weld.Parent = item
+		return item
+	end
+	add("Mask", Vector3.new(1.5, 1.4, 1.3), Vector3.new(0, 1.9, 0), dark)
+	for _, x in {-0.36, 0.36} do
+		add("Eye", Vector3.new(0.38, 0.14, 0.12), Vector3.new(x, 1.94, -0.67), boss and GOLD or RED, Enum.Material.Neon)
+	end
+	add("Headband", Vector3.new(1.65, 0.24, 1.4), Vector3.new(0, 2.28, 0), def.color, Enum.Material.Metal)
+	add("Belt", Vector3.new(2.15, 0.35, 1.15), Vector3.new(0, -0.85, 0), dark)
+	add("ChestRune", Vector3.new(0.38, 0.7, 0.08), Vector3.new(0, 0.2, -0.56), def.color:Lerp(Color3.new(1, 1, 1), 0.5), Enum.Material.Neon,
+		CFrame.Angles(0, 0, math.rad(35)))
+	for _, x in {-1, 1} do
+		add("Arm", Vector3.new(0.7, 2, 0.8), Vector3.new(x * 1.4, -0.05, 0), dark)
+		add("Shoulder", Vector3.new(1.15, 0.6, 1.2), Vector3.new(x * 1.45, 0.9, 0), def.color, Enum.Material.Metal,
+			CFrame.Angles(0, 0, math.rad(x * -15)))
+		add("Leg", Vector3.new(0.85, 2, 0.9), Vector3.new(x * 0.55, -2.2, 0), dark)
+		add("Boot", Vector3.new(0.95, 0.5, 1.2), Vector3.new(x * 0.55, -3, -0.1), metal, Enum.Material.Metal)
+	end
+	add("EnemyBlade", Vector3.new(0.12, 0.45, boss and 4.8 or 3.4), Vector3.new(-1.45, -0.8, -1.6), metal, Enum.Material.Metal)
+	add("EnemyEdge", Vector3.new(0.15, 0.09, boss and 4.8 or 3.4), Vector3.new(-1.45, -1.03, -1.6), def.color, Enum.Material.Neon)
+	if boss then
+		for _, x in {-0.6, 0.6} do
+			add("OniHorn", Vector3.new(0.25, 1.45, 0.25), Vector3.new(x, 2.9, 0), GOLD, Enum.Material.Metal,
+				CFrame.Angles(0, 0, math.rad(-x * 25)))
+		end
+		add("Mantle", Vector3.new(2.7, 3.4, 0.2), Vector3.new(0, -0.35, 0.65), def.color:Lerp(dark, 0.35))
+	end
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(215, 66)
+	gui.StudsOffset = Vector3.new(0, 3.8 * scale, 0)
+	gui.AlwaysOnTop = true
+	gui.MaxDistance = 100
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.fromScale(1, 0.65)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 13
+	nameLabel.TextColor3 = boss and GOLD or Color3.new(1, 1, 1)
+	nameLabel.TextStrokeTransparency = 0.3
+	nameLabel.Text = (boss and "BOSS • " or "") .. model.Name .. "\n" .. p.DisplayName .. "'s opponent"
+	nameLabel.Parent = gui
+	local back = Instance.new("Frame")
+	back.Position, back.Size = UDim2.fromScale(0, 0.75), UDim2.fromScale(1, 0.18)
+	back.BackgroundColor3, back.BorderSizePixel = dark, 0
+	back.Parent = gui
+	local fill = Instance.new("Frame")
+	fill.Size, fill.BackgroundColor3, fill.BorderSizePixel = UDim2.fromScale(1, 1), boss and GOLD or RED, 0
+	fill.Parent = back
+	gui.Parent = root
+	model.Parent = fxFolder
+	return model, root, fill
+end
+local function hitBurst(root, color, count)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Color = ColorSequence.new(color)
+	emitter.Size = NumberSequence.new(0.7, 0)
+	emitter.Lifetime = NumberRange.new(0.2, 0.45)
+	emitter.Speed = NumberRange.new(8, 20)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.LightEmission, emitter.Rate = 1, 0
+	emitter.Parent = root
+	emitter:Emit(count or 12)
+	Debris:AddItem(emitter, 0.8)
+end
+local function damageNumber(root, amount)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(140, 38)
+	gui.StudsOffset, gui.AlwaysOnTop = Vector3.new(math.random(-8, 8) / 10, 3, 0), true
+	local label = Instance.new("TextLabel")
+	label.Size, label.BackgroundTransparency = UDim2.fromScale(1, 1), 1
+	label.Font, label.TextSize = Enum.Font.GothamBlack, 25
+	label.TextColor3, label.TextStrokeTransparency = GOLD, 0.1
+	label.Text = "−" .. SD.fmt(amount)
+	label.Parent, gui.Parent = gui, root
+	TweenService:Create(gui, TweenInfo.new(0.65), {StudsOffset = gui.StudsOffset + Vector3.new(0, 3, 0)}):Play()
+	TweenService:Create(label, TweenInfo.new(0.65), {TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+	Debris:AddItem(gui, 0.7)
+end
+local function retireEnemy(enemy, defeated)
+	if not enemy or not enemy.model.Parent then return end
+	if not defeated then enemy.model:Destroy(); return end
+	hitBurst(enemy.root, GOLD, 24)
+	for _, object in enemy.model:GetDescendants() do
+		if object:IsA("BasePart") then
+			TweenService:Create(object, TweenInfo.new(0.3), {Transparency = 1}):Play()
+		elseif object:IsA("BillboardGui") then object.Enabled = false end
+	end
+	Debris:AddItem(enemy.model, 0.55)
+end
+
+---------------------------------------------------------------- ROOM RUNS
+local function stopFight(p, message)
+	local run = fights[p]
+	if not run then return end
+	fights[p] = nil -- invalidates every delayed damage/spawn/retaliation callback
+	retireEnemy(run.enemy, false)
+	bump(p)
+	if message then toast(p, message, GOLD) end
+end
+local function teleport(p, cf)
+	local char, _, root = getChar(p)
+	if not root then return false end
+	root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+	char:PivotTo(cf)
+	return true
+end
+local spawnOpponent
+spawnOpponent = function(p, run)
+	if fights[p] ~= run or not data[p] or not getChar(p) then return end
+	local boss = run.step == SD.STAGE_MINIONS + 1
+	local spawnCF = world.rooms[run.stage].enemySpawns[run.step]
+	-- World spawn positions locate a regular enemy's torso. Lift the boss to keep its boots above the floor.
+	if boss then spawnCF += Vector3.new(0, 2, 0) end
+	local model, root, fill = buildEnemy(p, run.stage, boss, spawnCF)
+	local maxHp = SD.enemyHp(run.stage, boss)
+	run.enemy = {model = model, root = root, fill = fill, hp = maxHp, maxHp = maxHp, boss = boss,
+		home = spawnCF.Position, nextAttack = os.clock() + 1.4, winding = false}
+	bump(p)
+end
+local function startFight(p, roomIndex, movePlayer)
+	local d = data[p]
+	roomIndex = index(roomIndex, #SD.STAGES)
+	if not d or not roomIndex or not getChar(p) then return end
+	if roomIndex &gt; d.stage then
+		toast(p, "Defeat the previous room's boss to open this gate.", RED)
+		return
+	end
+	stopFight(p)
+	stopTraining(p)
+	if movePlayer then teleport(p, world.rooms[roomIndex].spawn) end
+	lastRoom[p] = roomIndex
+	local run = {stage = roomIndex, step = 1}
+	fights[p] = run
+	spawnOpponent(p, run)
+	toast(p, "ROOM " .. roomIndex .. " • " .. SD.STAGES[roomIndex].name .. " — approach and swing!", CYAN)
+end
+local function returnHub(p)
+	stopFight(p)
+	stopTraining(p)
+	lastRoom[p] = nil
+	teleport(p, world.spawn)
+	local _, hum = getChar(p)
+	if hum then hum.Health = hum.MaxHealth end
+	bump(p)
+end
+local function defeat(p, run, enemy)
+	if fights[p] ~= run or run.enemy ~= enemy or not data[p] then return end
+	run.enemy = nil -- exactly one reward path per opponent
+	retireEnemy(enemy, true)
+	local d = data[p]
+	local _, hum = getChar(p)
+	if hum then hum.Health = math.min(hum.MaxHealth, hum.Health + 15) end
+	local reward = enemy.boss and 0 or math.max(1, math.floor(SD.roomReward(run.stage) * 0.08))
+	if reward &gt; 0 then
+		addSpirit(p, reward)
+		syncRemote:FireClient(p, "Gain", reward)
+	end
+	if enemy.boss then
+		local room, trophies, spirit = run.stage, SD.roomTrophies(run.stage), SD.roomReward(run.stage)
+		d.trophies = math.min(1e12, d.trophies + trophies)
+		addSpirit(p, spirit)
+		if d.stage == room and room &lt; #SD.STAGES then d.stage = room + 1 end
+		fights[p] = nil
+		if hum then hum.Health = hum.MaxHealth end
+		bump(p)
+		toast(p, "ROOM CLEAR! +" .. SD.fmt(trophies) .. " Trophies • +" .. SD.fmt(spirit) .. " Spirit", GOLD)
+		syncRemote:FireClient(p, "RoomClear", {stage = room, trophies = trophies, spirit = spirit, nextStage = room &lt; #SD.STAGES and room + 1 or nil})
+	else
+		run.step += 1
+		bump(p)
+		task.delay(0.55, function() spawnOpponent(p, run) end)
+	end
+end
+local function awardMastery(p, xp)
+	local d = data[p]
+	local maximum = SD.MAX_MASTERY or 1000
+	if d.mastery &gt;= maximum then return end
+	d.masteryXP += xp
+	local old = d.mastery
+	while d.mastery &lt; maximum and d.masteryXP &gt;= SD.masteryNeed(d.mastery) do
+		d.masteryXP -= SD.masteryNeed(d.mastery)
+		d.mastery += 1
+	end
+	if d.mastery &gt;= maximum then d.masteryXP = 0 end
+	if d.mastery &gt; old then
+		bump(p)
+		toast(p, "MASTERY " .. d.mastery .. " • permanent x" .. string.format("%.2f", SD.masteryMultiplier(d.mastery)) .. " gain &amp; damage", CYAN)
+	end
+	dirty[p] = true
+end
+local function swing(p)
+	local now = os.clock()
+	if now - (lastSwing[p] or -100) &lt; SD.SWING_COOLDOWN then return end
+	local d = data[p]
+	local char, _, root = getChar(p)
+	if not d or not char then return end
+	local tool = char:FindFirstChildWhichIsA("Tool")
+	if not tool or not tool:GetAttribute("IsSword") or tool:GetAttribute("SwordIndex") ~= d.equipped then return end
+	local combo = now - (lastSwing[p] or -100) &lt; 1.15 and ((combos[p] or 0) % 3 + 1) or 1
+	lastSwing[p], combos[p] = now, combo
+	local _, station = currentTraining(p)
+	local gain = math.max(1, math.floor(getMult(p) * (station and station.mult or 1)))
+	addSpirit(p, gain)
+	awardMastery(p, station and station.xp or 1)
+	syncRemote:FireClient(p, "Gain", gain)
+	syncRemote:FireAllClients("Swing", p.UserId, combo)
+	if station then
+		local stationModel = world.training[training[p]]
+		if stationModel and stationModel.prompt and stationModel.prompt.Parent:IsA("BasePart") then
+			hitBurst(stationModel.prompt.Parent, station.color, 5)
+		end
+	end
+	local run = fights[p]
+	local enemy = run and run.enemy
+	if not enemy or enemy.hp &lt;= 0 then return end
+	-- Impact happens during the blade's forward phase, not when the input arrives.
+	task.delay(0.12, function()
+		local c, _, r = getChar(p)
+		if not c or c ~= char or tool.Parent ~= c or fights[p] ~= run or run.enemy ~= enemy or enemy.hp &lt;= 0 then return end
+		local delta = enemy.root.Position - r.Position
+		local flat = Vector3.new(delta.X, 0, delta.Z)
+		local forward = Vector3.new(r.CFrame.LookVector.X, 0, r.CFrame.LookVector.Z)
+		local range = SD.ATTACK_RANGE + (enemy.boss and 3 or 0)
+		if delta.Magnitude &gt; range or (flat.Magnitude &gt; 0.1 and forward:Dot(flat.Unit) &lt; 0.05) then return end
+		local damage = math.max(1, math.floor(getMult(p) * 4 * (combo == 3 and 1.35 or 1)))
+		enemy.hp = math.max(0, enemy.hp - damage)
+		hitBurst(enemy.root, SD.SWORDS[d.equipped].trail)
+		damageNumber(enemy.root, damage)
+		TweenService:Create(enemy.fill, TweenInfo.new(0.12), {Size = UDim2.fromScale(enemy.hp / enemy.maxHp, 1)}):Play()
+		dirty[p] = true
+		if enemy.hp &lt;= 0 then defeat(p, run, enemy) end
+	end)
+end
+local function beginTraining(p, id)
+	id = index(id, #SD.TRAINING)
+	local d = data[p]
+	if not d or not id then return end
+	local station, def = world.training[id], SD.TRAINING[id]
+	if not station or not near(p, station.center, station.radius + 3) then
+		toast(p, "Walk onto the training platform first.", GOLD)
+		return
+	end
+	if d.trophies &lt; def.requiredTrophies then
+		toast(p, "Requires " .. SD.fmt(def.requiredTrophies) .. " trophies. Clear more rooms!", RED)
+		return
+	end
+	if training[p] == id then stopTraining(p); return end
+	stopFight(p)
+	training[p] = id
+	bump(p)
+	toast(p, def.name .. " • swing for x" .. def.mult .. " Spirit and " .. def.xp .. " mastery XP", CYAN)
+end
+
+---------------------------------------------------------------- SHOPS / EXISTING PROGRESSION
+local function buySword(p, id)
+	local d = data[p]
+	id = index(id, #SD.SWORDS)
+	if not d or not id or d.owned[tostring(id)] then return end
+	local def = SD.SWORDS[id]
+	if d.spirit &lt; def.cost then toast(p, "Not enough Spirit.", RED); return end
+	d.spirit -= def.cost
+	d.owned[tostring(id)], d.equipped = true, id
+	giveSword(p)
+	bump(p)
+	toast(p, "Forged " .. def.name .. "!", CYAN)
+end
+local function equipSword(p, id)
+	local d = data[p]
+	id = index(id, #SD.SWORDS)
+	if d and id and d.owned[tostring(id)] then
+		d.equipped = id
+		giveSword(p)
+		bump(p)
+	end
+end
+local function hatch(p, id)
+	local d = data[p]
+	id = index(id, #SD.EGGS)
+	if not d or not id then return end
+	local egg = SD.EGGS[id]
+	if d.spirit &lt; egg.cost then toast(p, "Not enough Spirit.", RED); return end
+	local pool, total = {}, 0
+	for _, pet in SD.PETS do
+		if pet.egg == id then table.insert(pool, pet); total += pet.weight end
+	end
+	if total &lt;= 0 then return end
+	local roll, result = math.random() * total, pool[#pool]
+	for _, pet in pool do
+		roll -= pet.weight
+		if roll &lt;= 0 then result = pet; break end
+	end
+	d.spirit -= egg.cost
+	d.pets[result.name] = (d.pets[result.name] or 0) + 1
+	bump(p)
+	syncRemote:FireClient(p, "Hatch", result.name, result.rarity)
+end
+local function auraAction(p, id)
+	local d = data[p]
+	id = index(id, #SD.AURAS)
+	if not d or not id then return end
+	local def = SD.AURAS[id]
+	if not d.auras[tostring(id)] then
+		if d.spirit &lt; def.cost then toast(p, "Not enough Spirit.", RED); return end
+		d.spirit -= def.cost
+		d.auras[tostring(id)] = true
+	end
+	d.aura = d.aura == id and 0 or id
+	applyAura(p)
+	bump(p)
+end
+local function rebirth(p)
+	local d = data[p]
+	local cost = SD.rebirthCost(d.rebirths)
+	if d.spirit &lt; cost then toast(p, "Rebirth requires " .. SD.fmt(cost) .. " Spirit.", RED); return end
+	if d.rebirths &gt;= 100 then toast(p, "Maximum rebirth reached.", GOLD); return end
+	stopFight(p)
+	d.rebirths += 1
+	d.spirit, d.owned, d.equipped = 0, {["1"] = true}, 1
+	giveSword(p)
+	bump(p)
+	toast(p, "REBIRTH " .. d.rebirths .. " • +50% permanent bonus. Mastery, rooms and trophies kept!", GOLD)
+end
+local function redeem(p, code)
+	if type(code) ~= "string" or #code &gt; 64 then return end
+	code = string.upper((string.gsub(code, "%s", "")))
+	local d, def = data[p], SD.CODES[code]
+	if not def then toast(p, "Unknown code.", RED)
+	elseif d.codes[code] then toast(p, "Already redeemed.", GOLD)
+	else
+		d.codes[code] = true
+		addSpirit(p, def.spirit or 0)
+		bump(p)
+		toast(p, "Code redeemed! +" .. SD.fmt(def.spirit or 0) .. " Spirit", CYAN)
+	end
+end
+
+actionRemote.OnServerEvent:Connect(function(p, action, arg)
+	if not data[p] or type(action) ~= "string" then return end
+	local now = os.clock()
+	if action == "Swing" then swing(p); return end
+	if action == "RequestState" then
+		if now - (lastRequest[p] or -100) &gt;= 1 then
+			lastRequest[p] = now
+			syncRemote:FireClient(p, "State", snapshot(p))
+		end
+		return
+	end
+	if now - (lastAction[p] or -100) &lt; 0.15 then return end
+	lastAction[p] = now
+	if action == "BuySword" then buySword(p, arg)
+	elseif action == "EquipSword" then equipSword(p, arg)
+	elseif action == "Hatch" then hatch(p, arg)
+	elseif action == "Aura" then auraAction(p, arg)
+	elseif action == "Rebirth" then rebirth(p)
+	elseif action == "Redeem" then redeem(p, arg)
+	elseif action == "Fight" or action == "Travel" then startFight(p, arg, true)
+	elseif action == "StopFight" then stopFight(p, "Run stopped. Use the room sign to retry.")
+	elseif action == "ReturnHub" then returnHub(p)
+	elseif action == "Train" then beginTraining(p, arg)
+	elseif action == "StopTraining" then stopTraining(p) end
+end)
+
+---------------------------------------------------------------- PROXIMITY PROMPTS
+local function promptPosition(prompt)
+	local parent = prompt.Parent
+	if parent:IsA("Attachment") then return parent.WorldPosition end
+	if parent:IsA("BasePart") then return parent.Position end
+	if parent:IsA("Model") then return parent:GetPivot().Position end
+	return nil
+end
+local function bindPrompt(prompt, callback)
+	if not prompt then return end
+	prompt.Triggered:Connect(function(p)
+		if not data[p] then return end
+		local position = promptPosition(prompt)
+		if position and near(p, position, prompt.MaxActivationDistance + 3) then
+			local now = os.clock()
+			if now - (lastAction[p] or -100) &lt; 0.15 then return end
+			lastAction[p] = now
+			callback(p)
+		end
+	end)
+end
+for id, station in world.training do
+	bindPrompt(station.prompt, function(p) beginTraining(p, id) end)
+end
+for id, prompt in world.roomPrompts do
+	bindPrompt(prompt, function(p) startFight(p, id, true) end)
+end
+for _, prompt in world.returnPrompts do
+	bindPrompt(prompt, returnHub)
+end
+for tab, prompt in world.hubPrompts do
+	bindPrompt(prompt, function(p) syncRemote:FireClient(p, "Open", tab) end)
+end
+
+---------------------------------------------------------------- SAVE / LOAD (never overwrite after a failed read)
+local function loadPlayer(p)
+	local ok, result
+	for attempt = 1, 3 do
+		local blocked = false
+		ok, result = pcall(function()
+			return store:UpdateAsync("p_" .. p.UserId, function(previous)
+				local value = type(previous) == "table" and table.clone(previous) or defaultData()
+				local lease = value._session
+				if type(lease) == "table" and type(lease.id) == "string" and lease.id ~= SESSION_ID
+					and finite(lease.updated) and os.time() - lease.updated &lt; SESSION_LEASE then
+					blocked = true
+					return nil -- cancel: another live server owns this save
+				end
+				blocked = false
+				value._session = {id = SESSION_ID, updated = os.time()}
+				return value
+			end)
+		end)
+		if ok and blocked then
+			sessionBlocked[p] = true
+			ok = false
+			break
+		end
+		if ok then break end
+		warn("Sword save read/claim failed for " .. p.UserId .. " (attempt " .. attempt .. ").")
+		if attempt &lt; 3 then task.wait(attempt) end
+	end
+	if not ok then noSave[p], saveHealthy[p] = true, false end
+	return sanitize(ok and result or nil)
+end
+local function savePlayer(p, release)
+	if not data[p] or noSave[p] or released[p] then return end
+	-- Serialize saves for this player; departure must wait for an in-flight autosave.
+	while saving[p] do task.wait(0.1) end
+	if not data[p] or noSave[p] or released[p] then return end
+	saving[p] = true
+	local value = copySave(data[p])
+	local ok, ownershipLost
+	for attempt = 1, 3 do
+		ownershipLost = false
+		ok = pcall(function()
+			store:UpdateAsync("p_" .. p.UserId, function(previous)
+				local lease = type(previous) == "table" and previous._session
+				if type(lease) ~= "table" or lease.id ~= SESSION_ID then
+					ownershipLost = true
+					return nil -- never overwrite a save claimed by another server
+				end
+				ownershipLost = false
+				if release then
+					value._session = nil
+				else
+					value._session = {id = SESSION_ID, updated = os.time()}
+				end
+				return value
+			end)
+		end)
+		if ok and ownershipLost then
+			noSave[p] = true
+			ok = false
+			warn("Sword save ownership changed for " .. p.UserId .. "; further writes disabled.")
+			break
+		end
+		if ok then break end
+		warn("Sword save write failed for " .. p.UserId .. " (attempt " .. attempt .. ").")
+		if attempt &lt; 3 then task.wait(attempt) end
+	end
+	saveHealthy[p], saving[p] = ok == true, nil
+	if ok and release then released[p] = true end
+	if data[p] then dirty[p] = true end
+	if not ok then toast(p, "Saving is unavailable. Keep this session open and check Studio API access.", RED) end
+end
+local function onCharacter(p, char)
+	local hum = char:WaitForChild("Humanoid", 15)
+	local root = char:WaitForChild("HumanoidRootPart", 15)
+	local backpack = p:WaitForChild("Backpack", 15)
+	if not hum or not root or not backpack or not data[p] or p.Character ~= char then return end
+	stopFight(p)
+	stopTraining(p)
+	lastRoom[p] = nil
+	teleport(p, world.spawn)
+	hum.WalkSpeed = 24
+	giveSword(p)
+	applyAura(p)
+	hum.Died:Connect(function()
+		if p.Character ~= char then return end
+		stopFight(p)
+		stopTraining(p)
+		lastRoom[p] = nil
+		toast(p, "Defeated — returning to the sanctuary. Your progress is safe.", GOLD)
+	end)
+	bump(p)
+end
+local function onPlayer(p)
+	if loaded[p] then return end
+	loaded[p] = true
+	local d = loadPlayer(p)
+	if p.Parent ~= Players then
+		-- A player can leave during the yielding load. Release only the claim we acquired.
+		if not noSave[p] then
+			data[p] = d
+			savePlayer(p, true)
+			data[p] = nil
+		end
+		loaded[p], noSave[p], saveHealthy[p], released[p], sessionBlocked[p] = nil, nil, nil, nil, nil
+		return
+	end
+	data[p], versions[p] = d, 1
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	for _, name in {"Power", "Trophies", "Rebirths"} do
+		local value = Instance.new("NumberValue")
+		value.Name, value.Parent = name, stats
+	end
+	stats.Parent = p
+	p.CharacterAdded:Connect(function(char) task.spawn(onCharacter, p, char) end)
+	if p.Character then task.spawn(onCharacter, p, p.Character) end
+	if SD.GROUP_ID &gt; 0 then
+		local success, member = pcall(function() return p:IsInGroup(SD.GROUP_ID) end)
+		inGroup[p] = success and member == true
+	end
+	local elapsed = math.clamp(os.time() - d.lastSeen, 0, 8 * 3600)
+	local offlineGain = math.floor(elapsed * getMult(p) * 0.25)
+	d.lastSeen = os.time()
+	if offlineGain &gt; 0 then addSpirit(p, offlineGain) end
+	bump(p)
+	task.delay(4, function()
+		if not data[p] then return end
+		if sessionBlocked[p] then
+			toast(p, "Another server owns your save. This is a temporary practice session; rejoin after leaving the other session.", GOLD)
+		elseif noSave[p] then
+			toast(p, "Practice session: saving unavailable. Publish and enable Studio API access to test saves.", GOLD)
+		elseif offlineGain &gt; 0 then
+			toast(p, "Welcome back! +" .. SD.fmt(offlineGain) .. " offline Spirit", CYAN)
+		end
+	end)
+end
+Players.PlayerAdded:Connect(function(p) task.spawn(onPlayer, p) end)
+for _, p in Players:GetPlayers() do task.spawn(onPlayer, p) end
+Players.PlayerRemoving:Connect(function(p)
+	stopFight(p)
+	stopTraining(p)
+	savePlayer(p, true)
+	data[p], dirty[p], versions[p], loaded[p], lastRoom[p] = nil, nil, nil, nil, nil
+	lastSwing[p], combos[p], lastAction[p], lastRequest[p] = nil, nil, nil, nil
+	inGroup[p], noSave[p], saveHealthy[p], released[p], sessionBlocked[p] = nil, nil, nil, nil, nil
+end)
+game:BindToClose(function()
+	closing = true
+	local pending = 0
+	for p in data do
+		pending += 1
+		task.spawn(function() savePlayer(p, true); pending -= 1 end)
+	end
+	local deadline = os.clock() + 25
+	while pending &gt; 0 and os.clock() &lt; deadline do task.wait(0.1) end
+end)
+
+---------------------------------------------------------------- MOVEMENT / ENEMY TELEGRAPHS / SYNC
+local function roomAt(pos)
+	if math.abs(pos.X) &gt; 55 or pos.Y &lt; -8 or pos.Y &gt; 35 then return nil end
+	for i, room in world.rooms do
+		if math.abs(pos.Z - room.center.Z) &lt;= 64 then return i end
+	end
+	return nil
+end
+local function checkMovement(p)
+	local _, _, root = getChar(p)
+	if not root then return end
+	if root.Position.Y &lt; -25 then returnHub(p); return end
+	local room = roomAt(root.Position)
+	local d = data[p]
+	-- Also guard the connecting bridge before an unopened room, not just the arena.
+	if root.Position.Z &lt; world.rooms[d.stage].center.Z - 65 and d.stage &lt; #SD.STAGES then
+		stopFight(p)
+		teleport(p, world.rooms[d.stage].spawn)
+		lastRoom[p] = nil
+		toast(p, "Gate sealed. Defeat your current room's boss first.", RED)
+		return
+	end
+	if room and room &gt; d.stage then
+		stopFight(p)
+		teleport(p, world.rooms[d.stage].spawn)
+		lastRoom[p] = nil
+		return
+	end
+	if room ~= lastRoom[p] then
+		local run = fights[p]
+		if run and run.stage ~= room then stopFight(p) end
+		lastRoom[p] = room
+		if room then startFight(p, room, false) end
+	end
+	currentTraining(p)
+end
+local function updateEnemy(p, dt)
+	local run = fights[p]
+	local enemy = run and run.enemy
+	if not enemy or enemy.hp &lt;= 0 or not enemy.root.Parent then return end
+	local _, hum, root = getChar(p)
+	if not root then stopFight(p); return end
+	local now = os.clock()
+	local delta = root.Position - enemy.root.Position
+	local flat = Vector3.new(delta.X, 0, delta.Z)
+	-- A small advance gives each opponent presence without dragging it out of its room.
+	if flat.Magnitude &gt; 5 and flat.Magnitude &lt; 24 and not enemy.winding then
+		local nextPos = enemy.root.Position + flat.Unit * math.min(dt * 5, flat.Magnitude - 5)
+		if (nextPos - enemy.home).Magnitude &lt;= 13 then
+			enemy.root.CFrame = CFrame.lookAt(nextPos, Vector3.new(root.Position.X, nextPos.Y, root.Position.Z))
+		end
+	elseif flat.Magnitude &gt; 0.2 and not enemy.winding then
+		enemy.root.CFrame = CFrame.lookAt(enemy.root.Position, Vector3.new(root.Position.X, enemy.root.Position.Y, root.Position.Z))
+	end
+	if flat.Magnitude &gt; 10 or math.abs(delta.Y) &gt; 9 or enemy.winding or now &lt; enemy.nextAttack then return end
+	enemy.winding, enemy.nextAttack = true, now + (enemy.boss and 1.8 or 2.2)
+	local flash = Instance.new("Highlight")
+	flash.FillColor, flash.OutlineColor = RED, RED
+	flash.FillTransparency, flash.OutlineTransparency = 0.55, 0.1
+	flash.Parent = enemy.model
+	Debris:AddItem(flash, 0.5)
+	-- Telegraph grants time to move away; damage is checked again at impact.
+	task.delay(0.45, function()
+		if fights[p] ~= run or run.enemy ~= enemy or enemy.hp &lt;= 0 then return end
+		enemy.winding = false
+		local _, currentHum, currentRoot = getChar(p)
+		if not currentRoot then return end
+		if (currentRoot.Position - enemy.root.Position).Magnitude &lt;= (enemy.boss and 12 or 10) then
+			currentHum:TakeDamage((7 + run.stage * 1.1) * (enemy.boss and 1.6 or 1))
+			hitBurst(currentRoot, RED, 7)
+		end
+	end)
+end
+task.spawn(function()
+	local previous, lastSave = os.clock(), os.clock()
+	while not closing do
+		task.wait(0.15)
+		local now = os.clock()
+		local dt = math.min(0.3, now - previous)
+		previous = now
+		for p in data do
+			if p.Parent == Players then checkMovement(p); updateEnemy(p, dt) end
+		end
+		for p in dirty do
+			dirty[p] = nil
+			if data[p] and p.Parent == Players then
+				updateLeaderstats(p)
+				syncRemote:FireClient(p, "State", snapshot(p))
+			end
+		end
+		if now - lastSave &gt;= 60 then
+			lastSave = now
+			for p in data do
+				if not saving[p] then task.spawn(savePlayer, p) end
+			end
+		end
+	end
+end)
+</ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX_StarterPlayer"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX_StarterPlayerScripts"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX_GameClient"><Properties><string name="Name">GameClient</string><ProtectedString name="Source">--[[
+    BLADEBOUND / SPIRIT TRIALS — LocalScript in StarterPlayer &gt; StarterPlayerScripts.
+    Owns presentation and input only. The server owns damage, rewards and progression.
+    All art is made from Roblox primitives; no private animation or image assets required.
+]]
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local StarterGui = game:GetService("StarterGui")
+local Debris = game:GetService("Debris")
+
+local player = Players.LocalPlayer
+local SD = require(ReplicatedStorage:WaitForChild("SwordData"))
+local action = ReplicatedStorage:WaitForChild("GameAction")
+local sync = ReplicatedStorage:WaitForChild("GameSync")
+local fmt = SD.fmt
+local state, currentTab, lastVer = nil, nil, nil
+local autoSwing, lastSwing, combo = false, 0, 0
+local afford, navButtons = {}, {}
+local openTab, render, requestSwing
+local c = Color3.fromRGB
+local C = {
+    ink = c(16, 22, 43), panel = c(24, 31, 56), card = c(34, 44, 73),
+    line = c(76, 100, 144), white = c(245, 250, 255), muted = c(176, 196, 222),
+    gold = c(255, 203, 76), orange = c(255, 132, 55), blue = c(70, 171, 255),
+    cyan = c(75, 235, 229), green = c(95, 225, 136), pink = c(255, 116, 179),
+    purple = c(170, 120, 255), red = c(240, 91, 109), grey = c(84, 99, 123),
+}
+local RARITY = {
+    Common = C.muted, Uncommon = C.green, Rare = C.blue, Epic = C.purple,
+    Legendary = C.gold, Mythic = C.pink,
+}
+
+local function new(class, props, parent)
+    local object = Instance.new(class)
+    for key, value in props do object[key] = value end
+    object.Parent = parent
+    return object
+end
+local function corner(object, radius)
+    new("UICorner", { CornerRadius = UDim.new(0, radius or 14) }, object)
+end
+local function stroke(object, color, thickness, transparency)
+    return new("UIStroke", {
+        Color = color or C.ink, Thickness = thickness or 2,
+        Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, object)
+end
+local function gradient(object, top, bottom, rotation)
+    return new("UIGradient", {
+        Color = ColorSequence.new(top, bottom), Rotation = rotation or 90,
+    }, object)
+end
+local function text(parent, value, size, position, fontSize, color, font, align)
+    return new("TextLabel", {
+        Size = size, Position = position or UDim2.new(), BackgroundTransparency = 1,
+        Text = value, TextSize = fontSize or 20, TextColor3 = color or C.white,
+        Font = font or Enum.Font.GothamBold, TextXAlignment = align or Enum.TextXAlignment.Left,
+        TextWrapped = true, TextStrokeTransparency = 0.8, TextStrokeColor3 = C.ink,
+    }, parent)
+end
+local function button(parent, caption, color, size, position, callback)
+    local b = new("TextButton", {
+        Size = size, Position = position or UDim2.new(), BackgroundColor3 = color,
+        Text = caption, Font = Enum.Font.GothamBlack, TextSize = 20,
+        TextColor3 = C.white, TextStrokeColor3 = C.ink, TextStrokeTransparency = 0.35,
+        AutoButtonColor = true, BorderSizePixel = 0, Selectable = true,
+    }, parent)
+    corner(b, 12)
+    stroke(b, C.ink, 3)
+    gradient(b, c(255, 255, 255), c(182, 195, 220))
+    if callback then b.Activated:Connect(callback) end
+    return b
+end
+local function frame(parent, size, position, color)
+    local f = new("Frame", {
+        Size = size, Position = position or UDim2.new(), BackgroundColor3 = color or C.panel,
+        BorderSizePixel = 0,
+    }, parent)
+    corner(f)
+    stroke(f, C.line, 2)
+    return f
+end
+-- Vector icons remain crisp without relying on external image assets.
+local function icon(parent, kind, color)
+    local box = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40) }, parent)
+    local function block(w, h, x, y, rot, round)
+        local p = new("Frame", { Size = UDim2.fromOffset(w, h), Position = UDim2.fromOffset(x, y),
+            BackgroundColor3 = color, BorderSizePixel = 0, Rotation = rot or 0 }, box)
+        if round then corner(p, round) end
+        return p
+    end
+    if kind == "sword" then
+        block(7, 27, 18, 0, 35, 2); block(23, 5, 5, 25, 35, 2); block(6, 13, 7, 27, 35, 2)
+    elseif kind == "trophy" then
+        block(22, 19, 9, 3, 0, 6); block(7, 13, 16, 19, 0, 2); block(25, 6, 7, 31, 0, 3)
+        local cup = block(36, 16, 2, 5, 0, 8); cup.BackgroundTransparency = 1; stroke(cup, color, 3)
+    elseif kind == "gem" then
+        block(23, 23, 8, 8, 45, 3); block(4, 14, 17, 12, 0, 2).BackgroundColor3 = C.white
+    elseif kind == "room" then
+        block(28, 34, 6, 3, 0, 3); block(17, 25, 11, 11, 0, 1).BackgroundColor3 = C.ink
+    elseif kind == "training" then
+        block(28, 6, 6, 17, 0, 2); block(8, 25, 2, 7, 0, 3); block(8, 25, 30, 7, 0, 3)
+    elseif kind == "pet" then
+        block(26, 24, 7, 12, 0, 8); block(10, 14, 7, 4, -20, 3); block(10, 14, 23, 4, 20, 3)
+        block(4, 5, 13, 21, 0, 2).BackgroundColor3 = C.ink
+        block(4, 5, 24, 21, 0, 2).BackgroundColor3 = C.ink
+    elseif kind == "aura" then
+        local ring = block(31, 31, 4, 4, 0, 20); ring.BackgroundTransparency = 1; stroke(ring, color, 4)
+        block(10, 10, 15, 15, 45, 2)
+    elseif kind == "rebirth" then
+        local ring = block(28, 28, 6, 6, 0, 20); ring.BackgroundTransparency = 1; stroke(ring, color, 4)
+        block(10, 10, 26, 5, 45, 1)
+    else
+        block(31, 24, 5, 8, -12, 5); block(18, 3, 11, 18, -12, 1).BackgroundColor3 = C.ink
+    end
+    return box
+end
+
+local gui = new("ScreenGui", {
+    Name = "BladeboundHUD", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = false, DisplayOrder = 10,
+}, player:WaitForChild("PlayerGui"))
+local root = new("Frame", {
+    Name = "ResponsiveCanvas", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(1280, 720), BackgroundTransparency = 1,
+}, gui)
+local uiScale = new("UIScale", { Scale = 1 }, root)
+local brand = text(root, "BLADEBOUND", UDim2.fromOffset(390, 38), UDim2.fromOffset(20, 2), 28, C.white, Enum.Font.GothamBlack)
+local subtitle = text(root, "S P I R I T   T R I A L S", UDim2.fromOffset(390, 20), UDim2.fromOffset(22, 36), 12, C.cyan)
+local function currency(kind, title, color)
+    local box = frame(root, UDim2.fromOffset(235, 72), nil, C.ink)
+    stroke(box, color, 2)
+    local symbol = icon(box, kind, color); symbol.Position = UDim2.fromOffset(12, 16)
+    local value = text(box, "0", UDim2.new(1, -68, 0, 33), UDim2.fromOffset(62, 5), 27, C.white, Enum.Font.GothamBlack)
+    text(box, title, UDim2.new(1, -68, 0, 22), UDim2.fromOffset(62, 40), 13, color)
+    return box, value
+end
+local spiritCard, spiritLabel = currency("gem", "SPIRIT", C.cyan)
+local trophyCard, trophyLabel = currency("trophy", "TROPHIES", C.gold)
+local powerCard, powerLabel = currency("sword", "DAMAGE / HIT", C.pink)
+local rebirthTag = text(root, "REBIRTH 0", UDim2.fromOffset(200, 25), UDim2.new(), 16, C.purple, Enum.Font.GothamBlack, Enum.TextXAlignment.Right)
+
+local route = frame(root, UDim2.fromOffset(440, 66), nil, C.ink)
+local routeTitle = text(route, "ROOM 01 / 15", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 6), 16, C.gold)
+local routeText = text(route, "TRAIN. FIGHT. ASCEND.", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 32), 14, C.white)
+local nav = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(150, 490) }, root)
+local tabs = {
+    { "Swords", "sword", C.orange }, { "Rooms", "room", C.green },
+    { "Training", "training", C.cyan }, { "Pets", "pet", C.pink },
+    { "Auras", "aura", C.purple }, { "Rebirth", "rebirth", C.gold },
+    { "Codes", "code", C.blue },
+}
+for i, tab in tabs do
+    local b = button(nav, "", tab[3], UDim2.fromOffset(146, 54), UDim2.fromOffset(0, (i - 1) * 64), function()
+        openTab(tab[1])
+    end)
+    local symbol = icon(b, tab[2], C.white); symbol.Position = UDim2.fromOffset(5, 6)
+    local title = text(b, tab[1]:upper(), UDim2.new(1, -49, 1, 0), UDim2.fromOffset(46, 0), 16, C.white, Enum.Font.GothamBlack)
+    title.TextXAlignment = Enum.TextXAlignment.Center
+    navButtons[i] = b
+end
+
+local quest = frame(root, UDim2.fromOffset(252, 180), nil, C.ink)
+text(quest, "YOUR NEXT CHALLENGE", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 12), 14, C.gold)
+local questTitle = text(quest, "Train your first blade", UDim2.new(1, -24, 0, 42), UDim2.fromOffset(12, 40), 21, C.white, Enum.Font.GothamBlack)
+local questDetail = text(quest, "Earn Spirit with every swing. Walk through the gate to Room 1.", UDim2.new(1, -24, 0, 62), UDim2.fromOffset(12, 82), 15, C.muted)
+local questReward = text(quest, "+5 TROPHIES", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 146), 17, C.green)
+
+local fightBar = frame(root, UDim2.fromOffset(520, 96), nil, C.ink)
+fightBar.Visible = false
+local fightName = text(fightBar, "ENEMY", UDim2.new(1, -90, 0, 26), UDim2.fromOffset(14, 8), 19, C.white, Enum.Font.GothamBlack)
+local fightCount = text(fightBar, "1 / 6", UDim2.fromOffset(70, 26), UDim2.new(1, -82, 0, 8), 17, C.gold, Enum.Font.GothamBlack, Enum.TextXAlignment.Right)
+local hpBack = frame(fightBar, UDim2.new(1, -28, 0, 18), UDim2.fromOffset(14, 40), C.panel)
+local hpFill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.red, BorderSizePixel = 0 }, hpBack)
+corner(hpFill, 8); gradient(hpFill, C.orange, C.red, 0)
+local hpText = text(fightBar, "Approach and swing to attack", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 65), 14, C.muted, nil, Enum.TextXAlignment.Center)
+
+local mastery = frame(root, UDim2.fromOffset(480, 72), nil, C.ink)
+local masteryTitle = text(mastery, "SWORD MASTERY 0", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 7), 16, C.cyan, Enum.Font.GothamBlack)
+local masteryBonus = text(mastery, "Train at a station to permanently increase gains", UDim2.new(1, -24, 0, 18), UDim2.fromOffset(12, 30), 12, C.muted)
+local xpBack = frame(mastery, UDim2.new(1, -24, 0, 8), UDim2.fromOffset(12, 55), C.panel)
+local xpFill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.cyan, BorderSizePixel = 0 }, xpBack)
+corner(xpFill, 5)
+local trainingTag = text(root, "", UDim2.fromOffset(490, 28), nil, 16, C.cyan, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
+local swingButton = button(root, "SWING", C.blue, UDim2.fromOffset(258, 65), nil, function() requestSwing() end)
+local swingCaption = text(swingButton, "+1 SPIRIT", UDim2.new(1, -14, 0, 18), UDim2.fromOffset(7, 42), 13, C.white, nil, Enum.TextXAlignment.Center)
+swingButton.TextYAlignment = Enum.TextYAlignment.Top
+new("UIPadding", { PaddingTop = UDim.new(0, 8) }, swingButton)
+local autoButton = button(root, "AUTO: OFF", C.grey, UDim2.fromOffset(155, 50), nil, function()
+    autoSwing = not autoSwing
+end)
+autoButton.TextSize = 16
+local hubButton = button(root, "RETURN TO HUB", C.purple, UDim2.fromOffset(192, 44), nil, function()
+    autoSwing = false
+    action:FireServer("ReturnHub")
+end)
+hubButton.TextSize = 15
+local stopButton = button(root, "END TRAINING", C.grey, UDim2.fromOffset(192, 38), nil, function()
+    action:FireServer("StopTraining")
+end)
+stopButton.Visible = false; stopButton.TextSize = 14
+local controls = text(root, "CLICK / TAP / R2 TO SWING  •  WALK TO YOUR ENEMY", UDim2.fromOffset(650, 22), nil, 12, C.white, nil, Enum.TextXAlignment.Center)
+local savingLabel = text(root, "CONNECTING TO YOUR SAVE…", UDim2.fromOffset(900, 28), nil, 16, C.gold, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+-- Modal shield prevents weapon clicks passing through menus.
+local shade = new("TextButton", {
+    Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.ink, BackgroundTransparency = 0.25,
+    Text = "", AutoButtonColor = false, Visible = false, ZIndex = 20,
+}, root)
+local panel = frame(shade, UDim2.fromOffset(840, 540), UDim2.fromScale(0.5, 0.5), C.panel)
+panel.AnchorPoint = Vector2.new(0.5, 0.5)
+panel.Active = true
+stroke(panel, C.cyan, 3)
+local panelTitle = text(panel, "ARMORY", UDim2.new(1, -100, 0, 42), UDim2.fromOffset(22, 10), 27, C.white, Enum.Font.GothamBlack)
+local panelHint = text(panel, "", UDim2.new(1, -44, 0, 30), UDim2.fromOffset(22, 54), 14, C.muted)
+local closeButton = button(panel, "X", C.red, UDim2.fromOffset(44, 42), UDim2.new(1, -58, 0, 12), function()
+    shade.Visible = false; currentTab = nil
+end)
+local content = new("ScrollingFrame", {
+    Position = UDim2.fromOffset(16, 92), Size = UDim2.new(1, -32, 1, -108),
+    BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 6,
+    ScrollBarImageColor3 = C.cyan, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y,
+}, panel)
+local toastLabel = text(root, "", UDim2.fromOffset(780, 60), nil, 25, C.gold, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
+toastLabel.ZIndex = 40; toastLabel.TextStrokeTransparency = 0.2; toastLabel.Visible = false
+local toastToken = 0
+local function toast(message, color)
+    toastToken += 1
+    local token = toastToken
+    toastLabel.Text = tostring(message)
+    toastLabel.TextColor3 = color or C.gold
+    toastLabel.TextTransparency = 0; toastLabel.Visible = true
+    task.delay(3.8, function()
+        if token == toastToken then
+            TweenService:Create(toastLabel, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
+        end
+    end)
+end
+local function gainPopup(amount)
+    local popup = text(root, "+" .. fmt(amount) .. " SPIRIT", UDim2.fromOffset(280, 38),
+        UDim2.new(0.5, math.random(-90, 70) - 140, 0.61, 0), 25, C.cyan, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
+    popup.ZIndex = 15
+    TweenService:Create(popup, TweenInfo.new(0.75), {
+        Position = popup.Position - UDim2.fromOffset(0, 75), TextTransparency = 1, TextStrokeTransparency = 1,
+    }):Play()
+    Debris:AddItem(popup, 0.8)
+end
+
+local portrait = false
+local function layout()
+    local available = gui.AbsoluteSize
+    if available.X &lt;= 0 or available.Y &lt;= 0 then return end
+    portrait = available.X / available.Y &lt; 0.95
+    local w, h = portrait and 720 or 1280, portrait and 1120 or 720
+    root.Size = UDim2.fromOffset(w, h)
+    uiScale.Scale = math.min(available.X / w, available.Y / h)
+    if portrait then
+        spiritCard.Position = UDim2.fromOffset(20, 66); spiritCard.Size = UDim2.fromOffset(330, 72)
+        trophyCard.Position = UDim2.fromOffset(370, 66); trophyCard.Size = UDim2.fromOffset(330, 72)
+        powerCard.Position = UDim2.fromOffset(20, 152); powerCard.Size = UDim2.fromOffset(330, 72)
+        rebirthTag.Position = UDim2.fromOffset(474, 25)
+        route.Position = UDim2.fromOffset(370, 152); route.Size = UDim2.fromOffset(330, 72)
+        nav.Position = UDim2.fromOffset(20, 242); nav.Size = UDim2.fromOffset(680, 132)
+        for i, b in navButtons do
+            b.Position = UDim2.fromOffset(((i - 1) % 4) * 174, math.floor((i - 1) / 4) * 66)
+            b.Size = UDim2.fromOffset(158, 56)
+        end
+        fightBar.Position = UDim2.fromOffset(70, 398); fightBar.Size = UDim2.fromOffset(580, 96)
+        quest.Position = UDim2.fromOffset(70, 520); quest.Size = UDim2.fromOffset(580, 180)
+        hubButton.Position = UDim2.fromOffset(50, 770); hubButton.Size = UDim2.fromOffset(276, 50)
+        stopButton.Position = UDim2.fromOffset(360, 770); stopButton.Size = UDim2.fromOffset(276, 50)
+        mastery.Position = UDim2.fromOffset(50, 840); mastery.Size = UDim2.fromOffset(620, 76)
+        trainingTag.Position = UDim2.fromOffset(115, 925)
+        swingButton.Position = UDim2.fromOffset(78, 968); swingButton.Size = UDim2.fromOffset(350, 76)
+        autoButton.Position = UDim2.fromOffset(454, 978); autoButton.Size = UDim2.fromOffset(188, 58)
+        controls.Position = UDim2.fromOffset(35, 1060)
+        savingLabel.Position = UDim2.fromOffset(10, 710); savingLabel.Size = UDim2.fromOffset(700, 44)
+        panel.Size = UDim2.fromOffset(680, 850)
+        toastLabel.Position = UDim2.fromOffset(20, 445); toastLabel.Size = UDim2.fromOffset(680, 70)
+    else
+        spiritCard.Position = UDim2.fromOffset(20, 64); spiritCard.Size = UDim2.fromOffset(290, 72)
+        trophyCard.Position = UDim2.fromOffset(326, 64); trophyCard.Size = UDim2.fromOffset(218, 72)
+        powerCard.Position = UDim2.fromOffset(560, 64); powerCard.Size = UDim2.fromOffset(230, 72)
+        rebirthTag.Position = UDim2.fromOffset(1055, 20)
+        route.Position = UDim2.fromOffset(814, 68); route.Size = UDim2.fromOffset(440, 66)
+        nav.Position = UDim2.fromOffset(20, 166); nav.Size = UDim2.fromOffset(146, 450)
+        for i, b in navButtons do b.Position = UDim2.fromOffset(0, (i - 1) * 64); b.Size = UDim2.fromOffset(146, 54) end
+        quest.Position = UDim2.fromOffset(1008, 168); quest.Size = UDim2.fromOffset(252, 180)
+        fightBar.Position = UDim2.fromOffset(380, 154); fightBar.Size = UDim2.fromOffset(520, 96)
+        mastery.Position = UDim2.fromOffset(356, 532); mastery.Size = UDim2.fromOffset(530, 72)
+        trainingTag.Position = UDim2.fromOffset(376, 500)
+        swingButton.Position = UDim2.fromOffset(446, 620); swingButton.Size = UDim2.fromOffset(270, 65)
+        autoButton.Position = UDim2.fromOffset(738, 627); autoButton.Size = UDim2.fromOffset(155, 50)
+        hubButton.Position = UDim2.fromOffset(1058, 626); hubButton.Size = UDim2.fromOffset(192, 44)
+        stopButton.Position = UDim2.fromOffset(1058, 578); stopButton.Size = UDim2.fromOffset(192, 38)
+        controls.Position = UDim2.fromOffset(320, 692)
+        savingLabel.Position = UDim2.fromOffset(190, 270); savingLabel.Size = UDim2.fromOffset(800, 36)
+        panel.Size = UDim2.fromOffset(840, 540)
+        toastLabel.Position = UDim2.fromOffset(250, 420); toastLabel.Size = UDim2.fromOffset(780, 60)
+    end
+    if shade.Visible and render then render(true) end
+end
+
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
+layout()
+
+local function clear()
+    for _, child in content:GetChildren() do child:Destroy() end
+    afford = {}
+end
+local function listLayout()
+    new("UIListLayout", { Padding = UDim.new(0, 12), SortOrder = Enum.SortOrder.LayoutOrder }, content)
+    new("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12) }, content)
+end
+local function trackAfford(b, cost)
+    afford[#afford + 1] = { button = b, cost = cost }
+end
+local function updateAfford()
+    if not state then return end
+    for _, entry in afford do
+        if entry.button.Parent then
+            entry.button.BackgroundColor3 = state.spirit &gt;= entry.cost and C.orange or C.grey
+        end
+    end
+end
+local function previewSword(viewport, definition)
+    local world = new("WorldModel", {}, viewport)
+    local model = new("Model", {}, world)
+    SD.buildSword(definition, model)
+    for _, part in model:GetDescendants() do
+        if part:IsA("BasePart") then part.Anchored = true end
+    end
+    model:PivotTo(CFrame.Angles(0, math.rad(-20), math.rad(-35)) * CFrame.Angles(math.rad(70), 0, 0))
+    local cf, size = model:GetBoundingBox()
+    local camera = new("Camera", { FieldOfView = 35 }, viewport)
+    camera.CFrame = CFrame.lookAt(cf.Position + Vector3.new(1, 0, math.max(size.X, size.Y, size.Z) * 1.7), cf.Position)
+    viewport.CurrentCamera = camera
+end
+local function renderSwords()
+    local width = portrait and 302 or 252
+    new("UIGridLayout", { CellSize = UDim2.fromOffset(width, 298), CellPadding = UDim2.fromOffset(12, 12), SortOrder = Enum.SortOrder.LayoutOrder }, content)
+    new("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingBottom = UDim.new(0, 12) }, content)
+    for i, def in SD.SWORDS do
+        local card = frame(content, UDim2.new(), nil, C.card); card.LayoutOrder = i
+        local rarity = def.rarity or (i &gt;= 11 and "Mythic" or i &gt;= 7 and "Legendary" or i &gt;= 4 and "Rare" or "Common")
+        local tint = RARITY[rarity] or C.cyan
+        stroke(card, tint, state and state.equipped == i and 3 or 1)
+        local viewport = new("ViewportFrame", {
+            Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 154),
+            BackgroundColor3 = C.ink, BorderSizePixel = 0, Ambient = c(205, 215, 240),
+            LightColor = C.white, LightDirection = Vector3.new(-1, -1, -1),
+        }, card)
+        corner(viewport, 10)
+        previewSword(viewport, def)
+        text(card, rarity:upper(), UDim2.new(1, -20, 0, 20), UDim2.fromOffset(10, 163), 12, tint)
+        text(card, def.name, UDim2.new(1, -20, 0, 40), UDim2.fromOffset(10, 183), 19, C.white, Enum.Font.GothamBlack)
+        text(card, "x" .. fmt(def.mult) .. " blade multiplier", UDim2.new(1, -20, 0, 20), UDim2.fromOffset(10, 224), 13, C.cyan)
+        local size, pos = UDim2.new(1, -20, 0, 36), UDim2.new(0, 10, 1, -46)
+        if state and state.equipped == i then
+            button(card, "EQUIPPED", C.green, size, pos).AutoButtonColor = false
+        elseif state and state.owned[tostring(i)] then
+            button(card, "EQUIP", C.blue, size, pos, function() action:FireServer("EquipSword", i) end)
+        else
+            trackAfford(button(card, fmt(def.cost) .. " SPIRIT", C.orange, size, pos, function() action:FireServer("BuySword", i) end), def.cost)
+        end
+    end
+end
+local function renderRooms()
+    listLayout()
+    for i, def in SD.STAGES do
+        local row = frame(content, UDim2.new(1, 0, 0, 126), nil, C.card); row.LayoutOrder = i
+        local unlocked = state and i &lt;= state.stage
+        text(row, string.format("%02d", i), UDim2.fromOffset(50, 46), UDim2.fromOffset(12, 12), 28, def.color, Enum.Font.GothamBlack)
+        text(row, def.name, UDim2.new(1, -220, 0, 30), UDim2.fromOffset(70, 10), 20, unlocked and C.white or C.muted, Enum.Font.GothamBlack)
+        text(row, fmt(SD.enemyHp(i, false)) .. " HP minions  /  " .. fmt(SD.enemyHp(i, true)) .. " HP boss", UDim2.new(1, -225, 0, 32), UDim2.fromOffset(70, 42), 14, C.muted)
+        text(row, "+" .. fmt(SD.roomTrophies(i)) .. " trophies  +" .. fmt(SD.roomReward(i)) .. " Spirit / clear", UDim2.new(1, -35, 0, 28), UDim2.fromOffset(16, 87), 16, C.gold)
+        local b = button(row, unlocked and "ENTER" or "LOCKED", unlocked and C.green or C.grey,
+            UDim2.fromOffset(132, 45), UDim2.new(1, -146, 0, 22), function()
+                if unlocked then
+                    action:FireServer("Fight", i); shade.Visible = false; currentTab = nil
+                else toast("Clear the previous room to open this gate.", C.gold) end
+            end)
+        b.TextSize = 17
+    end
+end
+local function renderTraining()
+    listLayout()
+    local info = frame(content, UDim2.new(1, 0, 0, 112), nil, C.ink); info.LayoutOrder = 0
+    local level = state and state.mastery or 0
+    text(info, "MASTERY " .. level .. "  /  x" .. string.format("%.2f", SD.masteryMultiplier(level)), UDim2.new(1, -28, 0, 34), UDim2.fromOffset(14, 10), 24, C.cyan, Enum.Font.GothamBlack)
+    text(info, "Walk to a training model in the hub and activate its prompt. Swing while inside the ring to earn XP and boosted Spirit. Each mastery level permanently adds +8% to your blade multiplier.", UDim2.new(1, -28, 0, 61), UDim2.fromOffset(14, 45), 15, C.muted)
+    for i, def in SD.TRAINING do
+        local row = frame(content, UDim2.new(1, 0, 0, 140), nil, C.card); row.LayoutOrder = i
+        stroke(row, def.color, 2)
+        text(row, def.name, UDim2.new(1, -190, 0, 32), UDim2.fromOffset(16, 12), 23, def.color, Enum.Font.GothamBlack)
+        text(row, def.description, UDim2.new(1, -190, 0, 38), UDim2.fromOffset(16, 45), 14, C.muted)
+        text(row, "x" .. def.mult .. " Spirit  •  +" .. def.xp .. " XP / swing", UDim2.new(1, -30, 0, 24), UDim2.fromOffset(16, 86), 16, C.cyan)
+        text(row, fmt(def.requiredTrophies) .. " trophies required", UDim2.new(1, -30, 0, 20), UDim2.fromOffset(16, 111), 13, C.gold)
+        local unlocked = state and state.trophies &gt;= def.requiredTrophies
+        local active = state and state.training == i
+        local b = button(row, active and "STOP" or unlocked and "TRAIN" or "LOCKED", active and C.orange or unlocked and C.green or C.grey,
+            UDim2.fromOffset(138, 46), UDim2.new(1, -154, 0, 26), function()
+                if active then action:FireServer("StopTraining")
+                elseif unlocked then action:FireServer("Train", i)
+                else toast("Earn " .. fmt(def.requiredTrophies) .. " trophies to train here.", C.gold) end
+            end)
+        b.TextSize = 17
+    end
+end
+local function renderPets()
+    listLayout()
+    for eggIndex, egg in SD.EGGS do
+        local row = frame(content, UDim2.new(1, 0, 0, 202), nil, C.card); row.LayoutOrder = eggIndex
+        text(row, egg.name, UDim2.new(1, -190, 0, 30), UDim2.fromOffset(16, 10), 23, C.pink, Enum.Font.GothamBlack)
+        local total = 0
+        for _, pet in SD.PETS do if pet.egg == eggIndex then total += pet.weight end end
+        local lines = {}
+        for _, pet in SD.PETS do
+            if pet.egg == eggIndex then
+                lines[#lines + 1] = string.format("%s  +%s%%  /  %.1f%%", pet.name, fmt(pet.bonus * 100), pet.weight / total * 100)
+            end
+        end
+        text(row, table.concat(lines, "\n"), UDim2.new(1, -190, 0, 146), UDim2.fromOffset(16, 45), 15, C.muted)
+        local b = button(row, "HATCH\n" .. fmt(egg.cost), C.orange, UDim2.fromOffset(145, 66), UDim2.new(1, -162, 0.5, -33), function()
+            action:FireServer("Hatch", eggIndex)
+        end)
+        trackAfford(b, egg.cost)
+    end
+    local header = text(content, "YOUR COMPANIONS — BEST THREE ACTIVE", UDim2.new(1, 0, 0, 36), nil, 17, C.white, Enum.Font.GothamBlack)
+    header.LayoutOrder = 20
+    local any = false
+    for i, pet in SD.PETS do
+        local count = state and state.pets[pet.name] or 0
+        if count &gt; 0 then
+            any = true
+            local row = frame(content, UDim2.new(1, 0, 0, 68), nil, C.card); row.LayoutOrder = 20 + i
+            text(row, pet.name .. "  x" .. count, UDim2.new(0.66, -14, 0, 32), UDim2.fromOffset(14, 5), 20, RARITY[pet.rarity])
+            text(row, pet.rarity .. "  /  +" .. fmt(pet.bonus * 100) .. "% each", UDim2.new(1, -28, 0, 22), UDim2.fromOffset(14, 39), 14, C.muted)
+        end
+    end
+    if not any then
+        local l = text(content, "No companions yet. Hatch your first spirit egg!", UDim2.new(1, 0, 0, 38), nil, 18, C.muted)
+        l.LayoutOrder = 21
+    end
+end
+local function renderAuras()
+    listLayout()
+    for i, def in SD.AURAS do
+        local row = frame(content, UDim2.new(1, 0, 0, 100), nil, C.card); row.LayoutOrder = i
+        text(row, def.name, UDim2.new(1, -200, 0, 34), UDim2.fromOffset(16, 10), 24, def.color, Enum.Font.GothamBlack)
+        text(row, "+" .. fmt(def.bonus * 100) .. "% Spirit and damage", UDim2.new(1, -200, 0, 30), UDim2.fromOffset(16, 51), 16, C.muted)
+        local owned = state and state.auras[tostring(i)]
+        local active = state and state.aura == i
+        local b = button(row, active and "REMOVE" or owned and "EQUIP" or fmt(def.cost), active and C.green or owned and C.blue or C.orange,
+            UDim2.fromOffset(156, 46), UDim2.new(1, -174, 0.5, -23), function() action:FireServer("Aura", i) end)
+        b.TextSize = 17
+        if not owned then trackAfford(b, def.cost) end
+    end
+end
+local function renderRebirth()
+    listLayout()
+    local rebirths = state and state.rebirths or 0
+    local cost = state and state.rebirthCost or SD.rebirthCost(0)
+    local box = frame(content, UDim2.new(1, 0, 0, 340), nil, C.card)
+    text(box, "ASCEND BEYOND YOUR LIMITS", UDim2.new(1, -40, 0, 42), UDim2.fromOffset(20, 18), 25, C.gold, Enum.Font.GothamBlack)
+    text(box, "REBIRTH " .. rebirths .. "  /  +" .. rebirths * 50 .. "% permanent bonus", UDim2.new(1, -40, 0, 30), UDim2.fromOffset(20, 65), 20, C.purple)
+    text(box, "Your Spirit balance and owned swords reset.\n\nKeep trophies, unlocked rooms, mastery, pets and auras. Every rebirth adds +50% to your rebirth multiplier.\n\nCost: " .. fmt(cost) .. " Spirit", UDim2.new(1, -40, 0, 160), UDim2.fromOffset(20, 110), 19, C.muted)
+    local confirm = false
+    local b
+    b = button(box, "REBIRTH", C.orange, UDim2.new(1, -40, 0, 48), UDim2.new(0, 20, 1, -64), function()
+        if not confirm then
+            confirm = true; b.Text = "CONFIRM RESET SPIRIT + SWORDS"
+        else
+            confirm = false; b.Text = "REBIRTH"; action:FireServer("Rebirth")
+        end
+    end)
+    b.TextSize = 18
+    trackAfford(b, cost)
+end
+local function renderCodes()
+    listLayout()
+    local box = frame(content, UDim2.new(1, 0, 0, 220), nil, C.card)
+    text(box, "A GIFT FOR YOUR JOURNEY", UDim2.new(1, -32, 0, 36), UDim2.fromOffset(16, 14), 24, C.blue, Enum.Font.GothamBlack)
+    text(box, "Redeem a code once per account for bonus Spirit.", UDim2.new(1, -32, 0, 26), UDim2.fromOffset(16, 55), 16, C.muted)
+    local input = new("TextBox", {
+        Size = UDim2.new(1, -32, 0, 48), Position = UDim2.fromOffset(16, 94),
+        BackgroundColor3 = C.ink, TextColor3 = C.white, TextSize = 23, Font = Enum.Font.GothamBlack,
+        PlaceholderText = "ENTER CODE", PlaceholderColor3 = C.muted, Text = "", ClearTextOnFocus = false,
+    }, box)
+    corner(input, 10); stroke(input, C.line, 2)
+    button(box, "REDEEM", C.green, UDim2.new(1, -32, 0, 44), UDim2.fromOffset(16, 158), function()
+        action:FireServer("Redeem", input.Text); input.Text = ""
+    end)
+end
+local renderers = {
+    Swords = renderSwords, Rooms = renderRooms, Stages = renderRooms, Training = renderTraining,
+    Pets = renderPets, Auras = renderAuras, Rebirth = renderRebirth, Codes = renderCodes,
+}
+local hints = {
+    Swords = "Original forged blades. Equip one and feel every swing.",
+    Rooms = "Five guardians. One boss. Greater rewards beyond every gate.",
+    Training = "Physical training stations turn practice into lasting power.",
+    Pets = "Hatch companions. The best three bonuses equip automatically.",
+    Auras = "Channel an elemental aura to increase Spirit and damage.",
+    Rebirth = "Trade your current loadout for a permanent multiplier.",
+    Codes = "Claim rewards from your journey's code collection.",
+}
+render = function(preserveScroll)
+    if not currentTab then return end
+    local scroll = content.CanvasPosition
+    clear()
+    panelTitle.Text = currentTab:upper()
+    panelHint.Text = hints[currentTab] or ""
+    local renderer = renderers[currentTab]
+    if renderer then renderer() end
+    if preserveScroll then content.CanvasPosition = scroll else content.CanvasPosition = Vector2.zero end
+    updateAfford()
+end
+openTab = function(tab, force)
+    if tab == "Stages" then tab = "Rooms" end
+    if not renderers[tab] then return end
+    if not force and currentTab == tab and shade.Visible then
+        shade.Visible = false; currentTab = nil; return
+    end
+    currentTab = tab; shade.Visible = true
+    render()
+end
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then
+        shade.Visible = false; currentTab = nil
+    end
+end)
+
+-- Asset-free, three-hit sword choreography. Each client animates the local
+-- prediction and server-confirmed swings of nearby observers independently.
+local swingTracks = {}
+local animationConnection
+local IDENTITY = CFrame.identity
+
+local function stopSwing(character)
+	local track = swingTracks[character]
+	if not track then return end
+	for _, joint in track.joints do
+		if joint.motor.Parent then joint.motor.C0 = joint.base end
+	end
+	if track.tool.Parent then track.tool.Grip = track.grip end
+	for _, trail in track.trails do
+		if trail.Parent then trail.Enabled = false end
+	end
+	swingTracks[character] = nil
+end
+
+local function rotation(x, y, z)
+	return CFrame.Angles(math.rad(x), math.rad(y), math.rad(z))
+end
+
+-- Delta rotations are expressed in the parent limb's axes, before the joint's
+-- original orientation. This keeps the same choreography usable on R6 and R15.
+local COMBO_POSES = {
+	{
+		wind = { right = rotation(120, 35, 65), left = rotation(32, 0, -20), body = rotation(0, -22, -5), elbow = rotation(25, 0, 0), wrist = rotation(0, 0, 18) },
+		strike = { right = rotation(65, -30, -74), left = rotation(50, 0, -24), body = rotation(0, 27, 7), elbow = rotation(8, 0, 0), wrist = rotation(0, 0, -24) },
+	},
+	{
+		wind = { right = rotation(90, -30, -75), left = rotation(40, 0, -15), body = rotation(0, 24, 6), elbow = rotation(32, 0, 0), wrist = rotation(0, 0, -18) },
+		strike = { right = rotation(70, 40, 73), left = rotation(28, 0, -30), body = rotation(0, -28, -7), elbow = rotation(10, 0, 0), wrist = rotation(0, 0, 20) },
+	},
+	{
+		wind = { right = rotation(166, 6, 10), left = rotation(120, -10, -28), body = rotation(-8, -8, 0), elbow = rotation(30, 0, 0), wrist = rotation(-12, 0, 0) },
+		strike = { right = rotation(38, -5, -12), left = rotation(52, 0, -30), body = rotation(14, 8, 0), elbow = rotation(2, 0, 0), wrist = rotation(12, 0, 0) },
+	},
+}
+
+local function animateSwing(character, combo)
+	if not character or not character.Parent then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local tool
+	for _, child in character:GetChildren() do
+		if child:IsA("Tool") and child:GetAttribute("IsSword") then tool = child; break end
+	end
+	if not humanoid or humanoid.Health &lt;= 0 or not tool then return end
+	stopSwing(character)
+
+	local names = humanoid.RigType == Enum.HumanoidRigType.R15
+		and { RightShoulder = "right", LeftShoulder = "left", Waist = "body", RightElbow = "elbow", RightWrist = "wrist" }
+		or { ["Right Shoulder"] = "right", ["Left Shoulder"] = "left", RootJoint = "body" }
+	local joints, trails = {}, {}
+	for _, descendant in character:GetDescendants() do
+		if descendant:IsA("Motor6D") and names[descendant.Name] then
+			table.insert(joints, { motor = descendant, base = descendant.C0, role = names[descendant.Name] })
+		end
+	end
+	for _, descendant in tool:GetDescendants() do
+		if descendant:IsA("Trail") then
+			descendant.Enabled = false
+			table.insert(trails, descendant)
+		end
+	end
+	swingTracks[character] = {
+		started = os.clock(), humanoid = humanoid, tool = tool, grip = tool.Grip,
+		joints = joints, trails = trails, poses = COMBO_POSES[math.clamp(math.floor(tonumber(combo) or 1), 1, 3)],
+	}
+
+	if animationConnection then return end
+	animationConnection = RunService.PreSimulation:Connect(function()
+		local now = os.clock()
+		for activeCharacter, track in swingTracks do
+			local elapsed = now - track.started
+			if elapsed &gt;= 0.40 or not activeCharacter.Parent or track.humanoid.Health &lt;= 0 or track.tool.Parent ~= activeCharacter then
+				stopSwing(activeCharacter)
+			else
+				local from, to, alpha
+				if elapsed &lt; 0.08 then
+					from, to = nil, track.poses.wind
+					alpha = math.sin(math.clamp(elapsed / 0.08, 0, 1) * math.pi / 2)
+				elseif elapsed &lt; 0.20 then
+					from, to = track.poses.wind, track.poses.strike
+					local t = math.clamp((elapsed - 0.08) / 0.12, 0, 1)
+					alpha = 1 - (1 - t) ^ 3
+				else
+					from, to = track.poses.strike, nil
+					local t = math.clamp((elapsed - 0.20) / 0.20, 0, 1)
+					alpha = t * t * (3 - 2 * t)
+				end
+				for _, joint in track.joints do
+					if joint.motor.Parent then
+						local offset = (from and from[joint.role] or IDENTITY):Lerp(to and to[joint.role] or IDENTITY, alpha)
+						joint.motor.C0 = CFrame.new(joint.base.Position) * offset * joint.base.Rotation
+					end
+				end
+				for _, trail in track.trails do
+					if trail.Parent then trail.Enabled = elapsed &gt;= 0.07 and elapsed &lt; 0.24 end
+				end
+			end
+		end
+		if next(swingTracks) == nil then
+			animationConnection:Disconnect()
+			animationConnection = nil
+		end
+	end)
+end
+
+
+local function equippedSword(character)
+    if not character then return nil end
+    for _, child in character:GetChildren() do
+        if child:IsA("Tool") and child:GetAttribute("IsSword") then return child end
+    end
+    return nil
+end
+requestSwing = function()
+    if not state or shade.Visible or UserInputService:GetFocusedTextBox() then return end
+    local now = os.clock()
+    if now - lastSwing &lt; (SD.SWING_COOLDOWN or 0.42) + 0.025 then return end
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health &lt;= 0 or not equippedSword(character) then return end
+    combo = now - lastSwing &gt;= 1.15 and 1 or combo % 3 + 1
+    lastSwing = now
+    animateSwing(character, combo)
+    action:FireServer("Swing")
+end
+local toolConnections, characterConnection = {}, nil
+local function bindTool(tool)
+    if not tool:IsA("Tool") or not tool:GetAttribute("IsSword") or toolConnections[tool] then return end
+    toolConnections[tool] = tool.Activated:Connect(function() requestSwing() end)
+    tool.Destroying:Once(function()
+        if toolConnections[tool] then toolConnections[tool]:Disconnect(); toolConnections[tool] = nil end
+    end)
+end
+local function bindCharacter(character)
+    if characterConnection then characterConnection:Disconnect() end
+    for tool, connection in toolConnections do connection:Disconnect(); toolConnections[tool] = nil end
+    lastSwing, combo = 0, 0
+    for _, child in character:GetChildren() do bindTool(child) end
+    characterConnection = character.ChildAdded:Connect(bindTool)
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Once(function() autoSwing = false end)
+end
+player.CharacterAdded:Connect(bindCharacter)
+if player.Character then task.spawn(bindCharacter, player.Character) end
+ContextActionService:BindAction("BladeboundSwing", function(_, inputState)
+    if inputState == Enum.UserInputState.Begin then requestSwing() end
+    return shade.Visible and Enum.ContextActionResult.Pass or Enum.ContextActionResult.Sink
+end, false, Enum.KeyCode.ButtonR2)
+pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
+
+local function onState(s)
+    state = s
+    spiritLabel.Text = fmt(s.spirit)
+    trophyLabel.Text = fmt(s.trophies)
+    powerLabel.Text = fmt(s.damage or s.mult * 4)
+    rebirthTag.Text = "REBIRTH " .. s.rebirths
+    swingCaption.Text = "+" .. fmt(s.swingGain or s.mult) .. " SPIRIT"
+    local stageIndex = math.clamp(s.fight and s.fight.stage or s.stage, 1, #SD.STAGES)
+    local stageDef = SD.STAGES[stageIndex]
+    routeTitle.Text = string.format("ROOM %02d / %02d", stageIndex, #SD.STAGES)
+    routeText.Text = stageDef.name:upper()
+    questTitle.Text = stageDef.name
+    questReward.Text = "+" .. fmt(SD.roomTrophies(stageIndex)) .. " TROPHIES  /  +" .. fmt(SD.roomReward(stageIndex)) .. " SPIRIT"
+    questDetail.Text = s.fight and "Approach your guardian and face it. Swing to deal damage. Clear all six enemies to open the next gate." or "Enter the next room, defeat its guardians, and claim a boss trophy chest. Train in the hub when enemies get tougher."
+    local level, xp, needed = s.mastery or 0, s.masteryXP or 0, s.masteryNeed or SD.masteryNeed(s.mastery or 0)
+    masteryTitle.Text = "SWORD MASTERY " .. level .. "    " .. fmt(xp) .. " / " .. fmt(needed) .. " XP"
+    masteryBonus.Text = string.format("x%.2f permanent blade bonus  /  train at a station to level up", s.masteryMult or SD.masteryMultiplier(level))
+    TweenService:Create(xpFill, TweenInfo.new(0.2), { Size = UDim2.fromScale(math.clamp(xp / math.max(needed, 1), 0, 1), 1) }):Play()
+    local training = s.training and SD.TRAINING[s.training]
+    trainingTag.Text = training and (training.name:upper() .. "  /  x" .. (s.trainingMult or training.mult) .. " SPIRIT") or "SWING TO GAIN SPIRIT  /  TRAIN TO GAIN MASTERY"
+    stopButton.Visible = training ~= nil
+    if s.fight then
+        fightBar.Visible = true
+        fightName.Text = (s.fight.boss and "BOSS  /  " or "GUARDIAN  /  ") .. (s.fight.boss and stageDef.boss or stageDef.minion)
+        fightName.TextColor3 = s.fight.boss and C.gold or C.white
+        fightCount.Text = s.fight.step .. " / " .. s.fight.total
+        local hp, maxHp = s.fight.hp or 0, s.fight.maxHp or 1
+        TweenService:Create(hpFill, TweenInfo.new(0.12), { Size = UDim2.fromScale(math.clamp(hp / math.max(maxHp, 1), 0, 1), 1) }):Play()
+        hpText.Text = fmt(hp) .. " / " .. fmt(maxHp) .. " HP  •  FACE YOUR ENEMY TO HIT"
+    else fightBar.Visible = false end
+    savingLabel.Visible = s.saving == false
+    savingLabel.Text = "SAVING UNAVAILABLE — This session's progress cannot be saved."
+    if s.ver ~= lastVer then
+        lastVer = s.ver
+        if shade.Visible then render(true) end
+    end
+    updateAfford()
+end
+sync.OnClientEvent:Connect(function(kind, a, b)
+    if kind == "State" then onState(a)
+    elseif kind == "Gain" then gainPopup(a)
+    elseif kind == "Toast" then toast(a, b)
+    elseif kind == "Hatch" then toast("HATCHED " .. tostring(a) .. "  /  " .. tostring(b), RARITY[b] or C.gold)
+    elseif kind == "Open" then openTab(a, true)
+    elseif kind == "Swing" then
+        if a == player.UserId then
+            -- Reconcile the sequence after a throttled packet without replaying prediction.
+            combo = b
+        else
+            local other = Players:GetPlayerByUserId(a)
+            if other and other.Character then animateSwing(other.Character, b) end
+        end
+    end
+end)
+local autoElapsed = 0
+RunService.Heartbeat:Connect(function(dt)
+    autoElapsed += dt
+    if autoElapsed &gt;= 0.1 then
+        autoElapsed = 0
+        autoButton.Text = autoSwing and "AUTO: ON" or "AUTO: OFF"
+        autoButton.BackgroundColor3 = autoSwing and C.green or C.grey
+        if autoSwing then requestSwing() end
+    end
+end)
+task.spawn(function()
+    while not state do
+        action:FireServer("RequestState")
+        task.wait(2)
+        if not state then
+            savingLabel.Text = "LOADING YOUR JOURNEY… If this continues, check GameServer in Output."
+            savingLabel.Visible = true
+        end
+    end
+end)
+</ProtectedString></Properties></Item></Item></Item></roblox>
