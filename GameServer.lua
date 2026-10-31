@@ -10,7 +10,7 @@ local HttpService = game:GetService("HttpService")
 
 local SD = require(ReplicatedStorage:WaitForChild("SwordData"))
 local WorldBuilder = require(script.Parent:WaitForChild("WorldBuilder"))
-local world = WorldBuilder.build(SD)
+local world = WorldBuilder.load(SD)
 local store = DataStoreService:GetDataStore("AnimeSwordSim_v1") -- preserves existing saves
 local function remote(name)
 	local event = ReplicatedStorage:FindFirstChild(name)
@@ -669,6 +669,20 @@ for _, prompt in world.returnPrompts do
 end
 for tab, prompt in world.hubPrompts do
 	bindPrompt(prompt, function(p) syncRemote:FireClient(p, "Open", tab) end)
+end
+-- Showroom plinths and egg shrines use the same proximity and action limits as
+-- other world interactions. Shared prompts never store per-player ownership.
+for id, prompt in world.swordPrompts or {} do
+	bindPrompt(prompt, function(p)
+		if data[p].owned[tostring(id)] then
+			equipSword(p, id)
+		else
+			buySword(p, id)
+		end
+	end)
+end
+for id, prompt in world.eggPrompts or {} do
+	bindPrompt(prompt, function(p) hatch(p, id) end)
 end
 
 ---------------------------------------------------------------- SAVE / LOAD (never overwrite after a failed read)

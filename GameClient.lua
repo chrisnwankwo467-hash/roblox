@@ -691,8 +691,138 @@ ContextActionService:BindAction("BladeboundSwing", function(_, inputState)
 end, false, Enum.KeyCode.ButtonR2)
 pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
 
+-- Local ambient polish caches only opt-in decorative parts, never collision or
+-- prompt anchors. The map is inspected once, then maintained by hierarchy events.
+local ambientFolder
+local ambientProps, displayPrompts, mapConnections = {}, {}, {}
+local function restoreAmbient(part, entry)
+    if entry.active and part.Parent then part.CFrame = entry.base end
+    entry.active = false
+end
+local function personalizePrompt(prompt, entry)
+    if not prompt.Parent then return end
+    if entry.sword then
+        local definition = SD.SWORDS[entry.sword]
+        if not definition then return end
+        prompt.ObjectText = definition.name
+        if state and state.equipped == entry.sword then
+            prompt.ActionText = "Equipped"
+        elseif state and state.owned and state.owned[tostring(entry.sword)] then
+            prompt.ActionText = "Equip"
+        else
+            prompt.ActionText = "Buy " .. fmt(definition.cost) .. " Spirit"
+        end
+    elseif entry.egg then
+        local definition = SD.EGGS[entry.egg]
+        if definition then
+            prompt.ObjectText = definition.name
+            prompt.ActionText = "Hatch • " .. fmt(definition.cost) .. " Spirit"
+        end
+    end
+end
+local function refreshDisplayPrompts()
+    for prompt, entry in displayPrompts do personalizePrompt(prompt, entry) end
+end
+local function clearAmbientMap()
+    for _, connection in mapConnections do connection:Disconnect() end
+    table.clear(mapConnections)
+    for part, entry in ambientProps do restoreAmbient(part, entry) end
+    for prompt, entry in displayPrompts do
+        if prompt.Parent then
+            prompt.ActionText = entry.action
+            prompt.ObjectText = entry.object
+        end
+    end
+    table.clear(ambientProps)
+    table.clear(displayPrompts)
+    ambientFolder = nil
+end
+local function trackWorldObject(object)
+    if object:IsA("BasePart") and object:GetAttribute("AmbientFloat") == true then
+        -- The builder opts in only isolated anchored art. Skip any accidental
+        -- colliding part or prompt carrier so interaction positions stay fixed.
+        if not object.Anchored or object.CanCollide or object:FindFirstChildWhichIsA("ProximityPrompt", true) then return end
+        if not ambientProps[object] then
+            local position = object.Position
+            ambientProps[object] = {
+                base = object.CFrame, rotate = object:GetAttribute("AmbientRotate") == true,
+                phase = (position.X * 0.37 + position.Y * 0.19 + position.Z * 0.11) % (2 * math.pi),
+                active = false,
+            }
+        end
+    elseif object:IsA("ProximityPrompt") then
+        local sword, egg = object:GetAttribute("SwordIndex"), object:GetAttribute("EggIndex")
+        if (sword and SD.SWORDS[sword]) or (egg and SD.EGGS[egg]) then
+            if not displayPrompts[object] then
+                displayPrompts[object] = {
+                    sword = sword, egg = egg, action = object.ActionText, object = object.ObjectText,
+                }
+            end
+            personalizePrompt(object, displayPrompts[object])
+        end
+    end
+end
+local function attachAmbientMap(folder)
+    if folder == ambientFolder or folder.Name ~= "AnimeSwordWorld" or not folder:IsA("Folder") then return end
+    clearAmbientMap()
+    ambientFolder = folder
+    mapConnections[#mapConnections + 1] = folder.DescendantAdded:Connect(function(object)
+        -- Attributes are assigned by the builder during the same construction
+        -- step; deferring also accommodates replicated descendant arrival.
+        task.defer(function()
+            if ambientFolder == folder and object:IsDescendantOf(folder) then trackWorldObject(object) end
+        end)
+    end)
+    mapConnections[#mapConnections + 1] = folder.DescendantRemoving:Connect(function(object)
+        local entry = ambientProps[object]
+        if entry then restoreAmbient(object, entry); ambientProps[object] = nil end
+        displayPrompts[object] = nil
+    end)
+    mapConnections[#mapConnections + 1] = folder.AncestryChanged:Connect(function()
+        if ambientFolder == folder and folder.Parent ~= workspace then clearAmbientMap() end
+    end)
+    for _, object in folder:GetDescendants() do trackWorldObject(object) end
+end
+local worldAddedConnection = workspace.ChildAdded:Connect(function(object)
+    if object.Name == "AnimeSwordWorld" then attachAmbientMap(object) end
+end)
+local existingWorld = workspace:FindFirstChild("AnimeSwordWorld")
+if existingWorld then attachAmbientMap(existingWorld) end
+local ambientElapsed = 0
+local ambientConnection = RunService.Heartbeat:Connect(function(dt)
+    ambientElapsed += dt
+    if ambientElapsed < 1 / 30 then return end
+    ambientElapsed = 0
+    local camera = workspace.CurrentCamera
+    local character = player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local viewer = camera and camera.CFrame.Position or (rootPart and rootPart.Position)
+    local now = os.clock()
+    for part, entry in ambientProps do
+        if not part.Parent then
+            ambientProps[part] = nil
+        else
+            local offset = viewer and (entry.base.Position - viewer)
+            if offset and offset:Dot(offset) <= 180 * 180 then
+                local bob = math.sin(now * 1.2 + entry.phase) * 0.3
+                local spin = entry.rotate and CFrame.Angles(0, now * 0.18 + entry.phase, 0) or CFrame.identity
+                part.CFrame = CFrame.new(0, bob, 0) * entry.base * spin
+                entry.active = true
+            else
+                restoreAmbient(part, entry)
+            end
+        end
+    end
+end)
+gui.Destroying:Once(function()
+    worldAddedConnection:Disconnect()
+    ambientConnection:Disconnect()
+    clearAmbientMap()
+end)
+
 local function onState(s)
     state = s
+    refreshDisplayPrompts()
     spiritLabel.Text = fmt(s.spirit)
     trophyLabel.Text = fmt(s.trophies)
     powerLabel.Text = fmt(s.damage or s.mult * 4)
