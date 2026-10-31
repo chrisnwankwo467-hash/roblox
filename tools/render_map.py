@@ -18,13 +18,13 @@ for y in range(HEIGHT):
     pixels[y, :, :] = np.array((143, 207, 238)) * (1-t) + np.array((230, 244, 247)) * t
 zbuffer = np.full((HEIGHT, WIDTH), -np.inf, dtype=np.float32)
 eye = np.array((260., 260., 360.))
-target = np.array((0., 3., 40.))
+target = np.array((0., 3., 24.))
 forward = (eye-target) / np.linalg.norm(eye-target)
 right = np.cross(np.array((0., 1., 0.)), forward); right /= np.linalg.norm(right)
 up = np.cross(forward, right)
 basis = np.stack((right, up, forward), axis=0)
 sun = np.array((-0.4, 0.85, 0.35)); sun /= np.linalg.norm(sun)
-SCALE = 2.55
+SCALE = 3.05
 OFFSET = np.array((WIDTH * .5, HEIGHT * .51))
 
 

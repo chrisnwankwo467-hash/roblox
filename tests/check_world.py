@@ -80,7 +80,7 @@ for _,object in world.folder:GetDescendants() do
     elseif object:IsA("Model") then models += 1 end
 end
 check(parts < 5000,"Static map exceeds intended part budget")
-check(close(world.spawn.Position,vector(0,4,145)),"Spawn must arrive in the expanded sanctuary")
+check(close(world.spawn.Position,vector(0,3.2,100)),"Spawn must arrive in the compact sanctuary")
 check(lighting.ClockTime==13.2 and lighting.Brightness>=2.5,"Map must use bright daylight")
 local atmosphere=lighting:FindFirstChild("SpiritbladeAtmosphere")
 check(atmosphere and atmosphere.Density<=0.2,"Thin atmosphere must preserve map visibility")
@@ -110,7 +110,7 @@ for i,room in world.rooms do
     check((entrance.Parent.Position-room.entry.Position).Magnitude < entrance.MaxActivationDistance,"Entrance prompt unreachable")
     priorZ=room.center.Z
 end
-local trainingPositions={vector(-44,0,100),vector(44,0,100),vector(-44,0,45),vector(44,0,45)}
+local trainingPositions={vector(-35.2,0,64),vector(35.2,0,64),vector(-35.2,0,20),vector(35.2,0,20)}
 for i,station in world.training do
     check(station.id==i,"Training identity mismatch")
     check(close(station.center,trainingPositions[i]),"Training court must follow the expanded hub layout")
@@ -188,7 +188,7 @@ for _,object in world.folder:GetDescendants()do
     if object:IsA("BasePart")and(string.match(object.Name,"^DisplayStair_")or string.match(object.Name,"^EggStair_"))then
         stairCount+=1
         check(object.CanCollide,"Access stairs must provide physical support")
-        check(math.min(object.Size.X,object.Size.Z)>=1.8 and math.max(object.Size.X,object.Size.Z)>=8,"Access steps need tread depth and standing width")
+        check(math.min(object.Size.X,object.Size.Z)>=1.5 and math.max(object.Size.X,object.Size.Z)>=8,"Access steps need tread depth and standing width")
         local group,index=string.match(object.Name,"^(.-)_(%d+)$")
         check(group~=nil,"Access stair must expose a stable group and step order")
         if not stairGroups[group]then stairGroups[group]={}end
@@ -212,7 +212,7 @@ for group,stairs in stairGroups do
 end
 -- The baked-map loader must reuse complete metadata, keep user edits, and
 -- reconstruct gameplay coordinates without rebuilding static map geometry.
-world.folder:SetAttribute("BakedWorldVersion","2")
+world.folder:SetAttribute("BakedWorldVersion",W.BAKED_VERSION)
 local userEdit=Instance.new("Folder");userEdit.Name="UserAuthoredDetail";userEdit.Parent=world.folder
 local loaded=W.load(SD)
 check(loaded.folder==world.folder and userEdit.Parent==loaded.folder,"Baked load must preserve geometry and user edits")

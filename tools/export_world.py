@@ -20,7 +20,7 @@ if not LUAU:
 
 EXPORT = r"""
 local built=W.build(SD)
-built.folder:SetAttribute("BakedWorldVersion","2")
+built.folder:SetAttribute("BakedWorldVersion",W.BAKED_VERSION)
 local objects,ids={},{}
 local function visit(object)
     objects[#objects+1]=object

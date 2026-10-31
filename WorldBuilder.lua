@@ -6,6 +6,8 @@
 
 local Lighting = game:GetService("Lighting")
 local W = {}
+W.HUB_SCALE = 0.8
+W.BAKED_VERSION = "3"
 local C = Color3.fromRGB
 local MAT = Enum.Material
 local DARK = C(27, 31, 48)
@@ -695,18 +697,104 @@ local function sanctuaryCliffs(parent)
 	end
 end
 
+-- Small linked courtyards replace the open lawns. All props are authored before
+-- the final scale so the entire hub, prompts and saved coordinates stay aligned.
+local function courtyardDetails(hub)
+	local m = model(hub, "LinkedCourtyards")
+	local cedar, plaster, leaf = C(111, 77, 119), C(251, 222, 215), C(77, 159, 113)
+	-- Three overhead thresholds break the long sightline into readable districts.
+	for i, z in { 122, 72, -8 } do
+		for _, side in { -1, 1 } do
+			block(m, "DistrictPost", Vector3.new(1.1, 14, 1.1), Vector3.new(side * 13, 7, z), cedar, MAT.Wood)
+			block(m, "DistrictCollar", Vector3.new(1.5, 0.8, 1.5), Vector3.new(side * 13, 11.5, z), GOLD, MAT.Metal)
+			block(m, "GatewayPlanter", Vector3.new(7, 1.1, 10), Vector3.new(side * 22, 0.55, z), plaster, MAT.Marble)
+			ball(m, "GatewayBonsai", Vector3.new(5.8, 4.8, 8), Vector3.new(side * 22, 3.2, z), leaf, MAT.Grass, false)
+		end
+		block(m, "DistrictLintel", Vector3.new(29, 1.1, 3.2), Vector3.new(0, 14.5, z), cedar, MAT.Wood)
+		block(m, "DistrictRoof", Vector3.new(32, 0.6, 5), Vector3.new(0, 15.3, z), C(120, 103, 170), MAT.Slate)
+		sign(m, ({ "TRAINING COURT", "SPIRIT WALK", "TRIAL APPROACH" })[i], Vector3.new(0, 12.4, z), 19, 2.1, GOLD)
+	end
+	-- Slatted garden walls frame the side courts, leaving each crosswalk open.
+	for _, side in { -1, 1 } do
+		for _, z in { 17, 76, 123 } do
+			local x = side * 67
+			block(m, "CourtyardWall", Vector3.new(2, 3.5, 17), Vector3.new(x, 1.75, z), plaster, MAT.SmoothPlastic)
+			block(m, "WallCoping", Vector3.new(2.6, 0.4, 18), Vector3.new(x, 3.7, z), cedar, MAT.Wood)
+			for j = 1, 5 do
+				block(m, "PrivacySlat", Vector3.new(0.5, 4.5, 0.5), Vector3.new(x, 6, z - 9 + j * 3), cedar, MAT.Wood)
+			end
+			block(m, "ScreenLintel", Vector3.new(0.8, 0.5, 18), Vector3.new(x, 8.5, z), cedar, MAT.Wood)
+		end
+		-- Pocket orchards occupy former grass strips beside the arrival plaza.
+		for _, z in { 157, 22, -25 } do
+			local p = Vector3.new(side * 43, 0, z)
+			cylinder(m, "OrchardPlanter", 9, 0.8, p + Vector3.new(0, 0.4, 0), plaster, MAT.Marble)
+			tree(m, p + Vector3.new(0, 0.8, 0), C(255, 170, 201), 0.8, true)
+			block(m, "RestBench", Vector3.new(10, 0.7, 2.7), p + Vector3.new(0, 1.7, -10), cedar, MAT.Wood)
+			for _, dx in { -3.5, 3.5 } do
+				block(m, "BenchLeg", Vector3.new(0.7, 1.4, 2), p + Vector3.new(dx, 0.7, -10), cedar, MAT.Wood)
+			end
+		end
+	end
+	-- A walled tea garden fills the empty rear-left corner with a destination.
+	local garden = model(m, "MoonTeaGarden")
+	local p = Vector3.new(-100, 0, -40)
+	block(garden, "GardenPaving", Vector3.new(62, 0.14, 45), p + Vector3.new(0, 0.08, 0), C(235, 209, 221), MAT.Cobblestone)
+	for _, side in { -1, 1 } do
+		block(garden, "GardenEnclosure", Vector3.new(2, 5, 44), p + Vector3.new(side * 30, 2.5, 0), plaster, MAT.SmoothPlastic)
+		block(garden, "GardenCap", Vector3.new(3, 0.6, 45), p + Vector3.new(side * 30, 5.2, 0), cedar, MAT.Wood)
+		block(garden, "EntranceHedge", Vector3.new(20, 3.2, 3), p + Vector3.new(side * 20, 1.6, 21), leaf, MAT.Grass)
+	end
+	shrine(garden, p + Vector3.new(-12, 0, -8), C(188, 119, 164), 1.25)
+	cylinder(garden, "KoiBasinRim", 8.5, 0.7, p + Vector3.new(14, 0.35, -2), plaster, MAT.Marble)
+	local water = cylinder(garden, "KoiWater", 7.8, 0.12, p + Vector3.new(14, 0.74, -2), C(105, 216, 225), MAT.Glass, false)
+	water.Transparency = 0.18
+	for i = 1, 5 do
+		block(garden, "SteppingStone", Vector3.new(5, 0.16, 3), p + Vector3.new(0, 0.18, 18 - i * 4), C(255, 236, 217), MAT.Slate)
+	end
+	tree(garden, p + Vector3.new(23, 0, -16), C(242, 163, 205), 1.1, true)
+	lantern(garden, p + Vector3.new(-24, 0, 15), GOLD, false)
+	lantern(garden, p + Vector3.new(24, 0, 15), GOLD, false)
+	sign(garden, "MOON TEA GARDEN", p + Vector3.new(0, 8, 21), 22, 2, C(244, 191, 220))
+end
+
+local function compactHub(hub, result)
+	local scale, anchor = W.HUB_SCALE, Vector3.new(0, 0, -80)
+	local function position(p) return anchor + (p - anchor) * scale end
+	local function transform(cf)
+		return CFrame.new(position(cf.Position)) * cf.Rotation
+	end
+	for _, obj in hub:GetDescendants() do
+		if obj:IsA("BasePart") then
+			obj.Size *= scale
+			obj.CFrame = transform(obj.CFrame)
+		elseif obj:IsA("Attachment") then obj.Position *= scale
+		elseif obj:IsA("PointLight") then obj.Range *= scale end
+	end
+	for _, station in result.training do
+		station.center = position(station.center)
+		station.radius *= scale
+		local m = hub:FindFirstChild("Training_" .. station.id, true)
+		m:SetAttribute("TrainingCenter", station.center)
+		m:SetAttribute("TrainingRadius", station.radius)
+	end
+	result.spawn = transform(result.spawn)
+	result.folder:SetAttribute("Spawn", result.spawn)
+	result.folder:SetAttribute("HubScale", scale)
+end
+
 local function buildHub(SD, folder, result)
 	local hub = model(folder, "SpiritbladeSanctuary")
 	local island = block(hub, "SanctuaryIsland", Vector3.new(300, 8, 260), Vector3.new(0, -4, 50), C(93, 193, 110), MAT.Grass, nil, true)
 	island.TopSurface = Enum.SurfaceType.Studs
 	block(hub, "SanctuaryCliff", Vector3.new(286, 11, 248), Vector3.new(0, -13.5, 50), C(177, 142, 155), MAT.Slate)
 	block(hub, "LowerCliffTerrace", Vector3.new(265, 9, 226), Vector3.new(0, -23, 50), C(137, 116, 156), MAT.Slate)
-	block(hub, "Promenade", Vector3.new(30, 0.18, 260), Vector3.new(0, 0.1, 50), C(207, 184, 247), MAT.SmoothPlastic)
+	block(hub, "Promenade", Vector3.new(22, 0.18, 260), Vector3.new(0, 0.1, 50), C(207, 184, 247), MAT.SmoothPlastic)
 	for _, side in { -1, 1 } do
-		block(hub, "PromenadeIvoryEdge", Vector3.new(1.3, 0.22, 260), Vector3.new(side * 15.4, 0.12, 50), C(255, 240, 204), MAT.SmoothPlastic)
+		block(hub, "PromenadeIvoryEdge", Vector3.new(1.3, 0.22, 260), Vector3.new(side * 11.4, 0.12, 50), C(255, 240, 204), MAT.SmoothPlastic)
 	end
 	for _, z in { 45, 100, 145 } do
-		block(hub, "Crosswalk", Vector3.new(284, 0.17, 12), Vector3.new(0, 0.11, z), C(220, 206, 255), MAT.SmoothPlastic)
+		block(hub, "Crosswalk", Vector3.new(284, 0.17, 9), Vector3.new(0, 0.11, z), C(220, 206, 255), MAT.SmoothPlastic)
 	end
 	for j = 1, 19 do
 		block(hub, "PromenadeChevron", Vector3.new(4, 0.04, 0.4), Vector3.new(-1.5, 0.22, 158 - j * 10), C(255, 241, 213), MAT.SmoothPlastic, CFrame.Angles(0, math.rad(-27), 0))
@@ -766,6 +854,8 @@ local function buildHub(SD, folder, result)
 	for _, x in { -108, -36, 36, 108 } do
 		block(hub, "SouthernGardenBoundary", Vector3.new(64, 2.3, 3), Vector3.new(x, 1.15, 177), C(66, 160, 100), MAT.Grass, nil, true)
 	end
+	courtyardDetails(hub)
+	compactHub(hub, result)
 end
 
 -- Original anime realm silhouettes. Decorative only; encounter coordinates stay fixed.
@@ -1125,7 +1215,7 @@ function W.build(SD)
 		rooms = {}, training = {}, roomPrompts = {}, returnPrompts = {}, hubPrompts = {}, swordPrompts = {}, eggPrompts = {},
 	}
 
-	folder:SetAttribute("WorldVersion", "2")
+	folder:SetAttribute("WorldVersion", W.BAKED_VERSION)
 	folder:SetAttribute("Spawn", result.spawn)
 	applyLighting()
 	buildHub(SD, folder, result)
@@ -1139,6 +1229,17 @@ function W.build(SD)
 		local accent = def.color
 		decorateRoom(room, center, theme, accent, i)
 		polishRealm(room, center, theme, accent, i)
+		-- A sequence of small battle courts frames the encounter road; side gaps
+		-- remain wide enough to dodge, explore landmarks and reach recall sigils.
+		local courts = model(room, "EncounterCourtyards")
+		for _, side in { -1, 1 } do
+			for _, dz in { 28, -4, -35 } do
+				local p = center + Vector3.new(side * 19, 0, dz)
+				block(courts, "CourtPlanter", Vector3.new(3, 0.8, 15), p + Vector3.new(0, 0.4, 0), C(222, 202, 213), MAT.Slate)
+				block(courts, "CourtFoliage", Vector3.new(2.6, 2.4, 14), p + Vector3.new(0, 1.9, 0), accent:Lerp(C(92, 164, 119), 0.55), MAT.Grass, nil, false)
+				block(courts, "CourtEndPost", Vector3.new(1, 4, 1), p + Vector3.new(0, 2, 8), accent, MAT.Wood)
+			end
+		end
 		local entry = CFrame.new(center + Vector3.new(0, 4, 72))
 		local gate = torii(room, center + Vector3.new(0, 0, 61), accent, 34)
 		sign(gate, ("ROOM %02d • %s\n+%s TROPHIES • +%s SPIRIT / CLEAR"):format(i, string.upper(def.name), SD.fmt(SD.roomTrophies(i)), SD.fmt(SD.roomReward(i))), center + Vector3.new(0, 23, 61), 42, 4.8, accent)
@@ -1181,7 +1282,7 @@ end
 -- remain available through W.build for the scripts-only installation.
 function W.load(SD)
 	local folder = workspace:FindFirstChild("AnimeSwordWorld")
-	if not folder or folder:GetAttribute("BakedWorldVersion") ~= "2" then
+	if not folder or folder:GetAttribute("BakedWorldVersion") ~= W.BAKED_VERSION then
 		if folder and folder:GetAttribute("BakedWorldVersion") ~= nil then
 			-- Keep incompatible baked maps recoverable instead of deleting user edits.
 			local storage = game:GetService("ServerStorage")

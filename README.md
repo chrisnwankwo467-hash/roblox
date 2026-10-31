@@ -21,7 +21,7 @@ To install in an existing place instead, replace the old scripts—do not leave 
 | `GameServer.lua` | Script named `GameServer` | ServerScriptService |
 | `GameClient.lua` | LocalScript named `GameClient` | StarterPlayer → StarterPlayerScripts |
 
-Keep these names exact. The server generates the `AnimeSwordWorld` folder and its own encounter folder, plus the `GameAction` and `GameSync` RemoteEvents. Existing unrelated map objects are preserved; remove an old baseplate or map manually if it overlaps this map. The main lobby spans X ±150 / Z −80 to +180, with layered cliff scenery beyond those edges, and rooms extend down negative Z to approximately −2,504 studs. Floors sit at Y=0. Streaming is enabled in the bundled place for this long map.
+Keep these names exact. The server generates the `AnimeSwordWorld` folder and its own encounter folder, plus the `GameAction` and `GameSync` RemoteEvents. Existing unrelated map objects are preserved; remove an old baseplate or map manually if it overlaps this map. The compact main lobby spans X ±120 / Z −80 to +128, with layered cliff scenery beyond those edges, and rooms extend down negative Z to approximately −2,504 studs. Floors sit at Y=0. Streaming is enabled in the bundled place for this long map.
 
 ## What changed
 
@@ -99,4 +99,9 @@ The current environment has official Luau 0.699 built outside the repository at 
 
 ## Editing the baked map
 
-The place includes `AnimeSwordWorld` with `BakedWorldVersion` set to `2`. `WorldBuilder.load` reconstructs gameplay references from the saved room/training attributes and hidden encounter markers. You can move/resize/color decorative parts in Studio normally; save or publish your place after editing. Keep the metadata-bearing room models, prompt anchors and encounter markers intact. If you move an arena or station, update its stored center/spawn attributes and markers as well; room progression currently expects the documented negative-Z route. If metadata is invalid or from another version, the server preserves that folder under `ServerStorage → BladeboundWorldBackups` and builds a valid replacement, with an Output warning. Standalone script installation still generates the map on the first Play.
+The place includes `AnimeSwordWorld` with `BakedWorldVersion` set to `3`. `WorldBuilder.load` reconstructs gameplay references from the saved room/training attributes and hidden encounter markers. You can move/resize/color decorative parts in Studio normally; save or publish your place after editing. Keep the metadata-bearing room models, prompt anchors and encounter markers intact. If you move an arena or station, update its stored center/spawn attributes and markers as well; room progression currently expects the documented negative-Z route. If metadata is invalid or from another version, the server preserves that folder under `ServerStorage → BladeboundWorldBackups` and builds a valid replacement, with an Output warning. Standalone script installation still generates the map on the first Play.
+
+
+## Compact courtyard revision
+
+The hub footprint is reduced by 36%, with a 17.6-stud main promenade, linked garden courts, overhead district gateways, privacy screens, Sakura rest areas and a moon tea garden. The spawn is now `(0, 3.2, 100)` and training centers are `(±35.2, 0, 64)` and `(±35.2, 0, 20)`, with 9.6-stud training radii. Geometry, interaction anchors and saved metadata scale together, while the combat rooms retain their original coordinates. Every room now has planted encounter borders with side openings. Download the revised full place to see the new baked map; replacing just the script preserves/backups older baked geometry and creates the new layout on Play.
