@@ -1939,7 +1939,17 @@ local HttpService = game:GetService("HttpService")
 local SD = require(ReplicatedStorage:WaitForChild("SwordData"))
 local WorldBuilder = require(script.Parent:WaitForChild("WorldBuilder"))
 local world = WorldBuilder.load(SD)
-local store = DataStoreService:GetDataStore("AnimeSwordSim_v1") -- preserves existing saves
+-- Unpublished places can reject GetDataStore itself, before any Get/Update.
+-- Saving is optional for a local playtest; it must never prevent game startup.
+local function openStore(service)
+	local ok, result = pcall(function()
+		return service:GetDataStore("AnimeSwordSim_v1") -- preserves existing saves
+	end)
+	if ok then return result end
+	warn("Bladebound: save service unavailable; starting a playable practice session. " .. tostring(result))
+	return nil
+end
+local store = openStore(DataStoreService)
 local function remote(name)
 	local event = ReplicatedStorage:FindFirstChild(name)
 	assert(not event or event:IsA("RemoteEvent"), name .. " must be a RemoteEvent")
@@ -2615,6 +2625,10 @@ end
 
 ---------------------------------------------------------------- SAVE / LOAD (never overwrite after a failed read)
 local function loadPlayer(p)
+	if not store then
+		noSave[p], saveHealthy[p] = true, false
+		return defaultData()
+	end
 	local ok, result
 	for attempt = 1, 3 do
 		local blocked = false

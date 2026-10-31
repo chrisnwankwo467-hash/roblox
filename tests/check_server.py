@@ -108,12 +108,23 @@ data[retrying].spirit=120
 calls=store.calls
 savePlayer(retrying)
 check(store.calls==calls+3 and saveHealthy[retrying] and store.records.p_1005.spirit==120,"Transient save failures must retry and recover")
+local existingStore=store
+check(openStore({GetDataStore=function()error("Publish this place first")end})==nil,"Save initialization denial must not throw or stop startup")
+check(openStore({GetDataStore=function()return existingStore end})==existingStore,"Available save service must retain its store")
+store=nil
+local practice={UserId=1006}
+data[practice]=loadPlayer(practice)
+check(data[practice].equipped==1 and data[practice].owned['1'] and noSave[practice] and saveHealthy[practice]==false,"Missing store must allow a playable starter practice session")
+savePlayer(practice)
+check(noSave[practice],"Missing store practice must remain protected from writes")
+store=existingStore
 print(string.format("PASS: %d server assertions; sanitize, claim/release, lease expiry/ownership, failed-read protection and retries",checks))
 """
 
 chunk = (ROOT / "tests/roblox_stubs.luau").read_text()
 chunk += "\nlocal SD=(function()\n"+(ROOT / "SwordData.lua").read_text()+"\nend)()\n"
 chunk += SETUP
+chunk += section("local function openStore(service)", "local store = openStore(DataStoreService)")
 chunk += section("local function finite(n)", "local function bump(p)")
 chunk += section("local function loadPlayer(p)", "local function onCharacter(p, char)")
 chunk += CHECKS
