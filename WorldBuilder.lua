@@ -7,7 +7,7 @@
 local Lighting = game:GetService("Lighting")
 local W = {}
 W.HUB_SCALE = 0.8
-W.BAKED_VERSION = "3"
+W.BAKED_VERSION = "4"
 local C = Color3.fromRGB
 local MAT = Enum.Material
 local DARK = C(27, 31, 48)
@@ -152,6 +152,24 @@ local function tree(parent, pos, foliage, scale, blossoms)
 		ball(m, "Canopy", Vector3.new(10, 6.8, 10) * scale, pos + off, foliage, MAT.Grass, false)
 	end
 	if blossoms then
+		local attachment=Instance.new("Attachment")
+		attachment.Name="PetalSource"
+		attachment.Position=Vector3.new(0,9,0)*scale
+		attachment.Parent=m:FindFirstChild("Trunk")
+		local petals=Instance.new("ParticleEmitter")
+		petals.Name="DriftingPetals"
+		petals.Texture="rbxasset://textures/particles/sparkles_main.dds"
+		petals.Color=ColorSequence.new(C(255,148,205),C(255,224,242))
+		petals.Size=NumberSequence.new(0.22,0)
+		petals.Transparency=NumberSequence.new(0.25,1)
+		petals.Rate=0.8
+		petals.Lifetime=NumberRange.new(3,5)
+		petals.Speed=NumberRange.new(0.3,1)
+		petals.Acceleration=Vector3.new(0.6,-0.7,0.2)
+		petals.Rotation=NumberRange.new(-180,180)
+		petals.RotSpeed=NumberRange.new(-25,25)
+		petals.SpreadAngle=Vector2.new(110,110)
+		petals.Parent=attachment
 		for i = 1, 3 do
 			block(m, "FallenPetals", Vector3.new(3, 0.07, 2.2) * scale, pos + Vector3.new(-5 + i * 2.8, 0.07, i * 1.8), foliage, MAT.SmoothPlastic, nil, false)
 		end
@@ -492,12 +510,12 @@ local function applyLighting()
 		return existing
 	end
 	local atmosphere = effect("Atmosphere", "SpiritbladeAtmosphere")
-	atmosphere.Density, atmosphere.Offset, atmosphere.Haze = 0.16, 0.12, 0.3
+	atmosphere.Density, atmosphere.Offset, atmosphere.Haze = 0.12, 0.12, 0.15
 	atmosphere.Color, atmosphere.Decay = C(208, 227, 255), C(164, 184, 219)
 	local bloom = effect("BloomEffect", "SpiritbladeBloom")
 	bloom.Intensity, bloom.Size, bloom.Threshold = 0.12, 18, 1.5
 	local grade = effect("ColorCorrectionEffect", "SpiritbladeColorGrade")
-	grade.Saturation, grade.Contrast, grade.Brightness = 0.1, 0.04, 0
+	grade.Saturation, grade.Contrast, grade.Brightness = 0.18, 0.04, 0
 	grade.TintColor = C(255, 250, 246)
 	local rays = effect("SunRaysEffect", "SpiritbladeSunRays")
 	rays.Intensity, rays.Spread = 0.025, 0.75
@@ -783,6 +801,49 @@ local function compactHub(hub, result)
 	result.folder:SetAttribute("HubScale", scale)
 end
 
+-- A saturated festival palette with readable paths and warm canyon silhouettes.
+local function festivalPalette(hub)
+	local colors = {
+		SanctuaryIsland=C(163, 230, 67), BrightCliffGrass=C(145, 225, 61), NorthernGrass=C(157, 234, 75),
+		SanctuaryCliff=C(239, 135, 80), LowerCliffTerrace=C(217, 94, 107),
+		NorthernCanyon=C(246, 144, 79), CliffSediment=C(255, 194, 108),
+		Promenade=C(154, 134, 239), Crosswalk=C(175, 151, 249),
+		PromenadeIvoryEdge=C(255, 238, 136), GardenPaving=C(206, 171, 245),
+		TerraceInset=C(211, 192, 255), EggPavilionFloor_1=C(169, 247, 207), EggPavilionFloor_2=C(225, 174, 255),
+		EggPavilionCanopy=C(123, 70, 214), EggCanopyEave=C(99, 58, 186),
+		DistrictRoof=C(122, 71, 211), WallCoping=C(111, 60, 164),
+		CourtyardWall=C(255, 193, 153), GardenEnclosure=C(255, 182, 147),
+		GardenBoundary=C(86, 192, 76), SouthernGardenBoundary=C(88, 192, 68),
+		PortalPillar=C(255, 95, 153), PortalLowerBeam=C(255, 131, 192),
+		PortalUpperEave=C(110, 62, 202), PortalWingEave=C(137, 77, 221),
+	}
+	local terraces = {C(247, 141, 74),C(235, 113, 95),C(222, 105, 139)}
+	local cliffIndex = 0
+	for _, obj in hub:GetDescendants() do
+		if obj:IsA("BasePart") then
+			if colors[obj.Name] then obj.Color=colors[obj.Name] end
+			if obj.Name=="PetalstoneTerrace" then
+				cliffIndex+=1; obj.Color=terraces[(cliffIndex-1)%3+1]
+			end
+			if obj.Name=="Canopy" and obj.Parent.Name=="SakuraTree" then
+				obj.Color=C(255, 117, 189)
+			end
+			if obj.Name=="BrightCliffGrass" or obj.Name=="NorthernGrass" or obj.Name=="Promenade" or obj.Name=="Crosswalk" then
+				obj.TopSurface=Enum.SurfaceType.Studs
+			end
+		end
+	end
+	-- Floating lanterns are decorative and use the existing distance-culled client animation.
+	local lanterns = model(hub,"FestivalSkyLanterns")
+	for i=1,10 do
+		local side=i%2==0 and 1 or -1
+		local p=Vector3.new(side*(15+i%3*3), 13+i%3*2, 100-i*11)
+		local lantern=ball(lanterns,"FloatingFestivalLantern",Vector3.new(1.2,1.8,1.2),p,
+			i%2==0 and C(255,193,62) or C(255,112,196),MAT.Neon,false)
+		lantern:SetAttribute("AmbientFloat",true)
+	end
+end
+
 local function buildHub(SD, folder, result)
 	local hub = model(folder, "SpiritbladeSanctuary")
 	local island = block(hub, "SanctuaryIsland", Vector3.new(300, 8, 260), Vector3.new(0, -4, 50), C(93, 193, 110), MAT.Grass, nil, true)
@@ -856,6 +917,7 @@ local function buildHub(SD, folder, result)
 	end
 	courtyardDetails(hub)
 	compactHub(hub, result)
+	festivalPalette(hub)
 end
 
 -- Original anime realm silhouettes. Decorative only; encounter coordinates stay fixed.

@@ -352,6 +352,21 @@
         "type": "NumberSequence",
         "category": "DataType",
         "basePart": false
+      },
+      "Acceleration": {
+        "type": "Vector3",
+        "category": "DataType",
+        "basePart": false
+      },
+      "RotSpeed": {
+        "type": "NumberRange",
+        "category": "DataType",
+        "basePart": false
+      },
+      "Rotation": {
+        "type": "NumberRange",
+        "category": "DataType",
+        "basePart": false
       }
     },
     "PointLight": {

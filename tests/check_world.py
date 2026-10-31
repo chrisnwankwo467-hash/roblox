@@ -86,6 +86,20 @@ local atmosphere=lighting:FindFirstChild("SpiritbladeAtmosphere")
 check(atmosphere and atmosphere.Density<=0.2,"Thin atmosphere must preserve map visibility")
 check(lighting:FindFirstChildOfClass("ColorCorrectionEffect")~=nil,"Daylight color grading missing")
 check(lighting:FindFirstChildOfClass("SunRaysEffect")~=nil,"Daylight sun rays missing")
+local island=world.folder:FindFirstChild("SanctuaryIsland",true)
+check(island.Color.G>0.85 and island.Color.R>0.55,"Festival grass must use a vivid lime palette")
+local petals,floating=0,0
+for _,obj in world.folder:GetDescendants()do
+    if obj.Name=="DriftingPetals"then
+        petals+=1
+        check(obj:IsA("ParticleEmitter")and obj.Rate<=1,"Petals must remain low-rate decorative emitters")
+    end
+    if obj:GetAttribute("AmbientFloat")==true then
+        floating+=1
+        check(obj:IsA("BasePart")and obj.Anchored and not obj.CanCollide,"Floating festival props must not affect gameplay physics")
+    end
+end
+check(petals>0 and floating>=10,"Festival environment needs blossoms and animated lantern props")
 check(world.swordPrompts and #world.swordPrompts==#SD.SWORDS,"Every modeled sword display needs an interaction")
 check(world.eggPrompts and #world.eggPrompts==#SD.EGGS,"Every modeled egg display needs an interaction")
 for index,prompt in world.swordPrompts do

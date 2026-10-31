@@ -25,9 +25,9 @@ local c = Color3.fromRGB
 local C = {
     ink = c(16, 22, 43), panel = c(24, 31, 56), card = c(34, 44, 73),
     line = c(76, 100, 144), white = c(245, 250, 255), muted = c(176, 196, 222),
-    gold = c(255, 203, 76), orange = c(255, 132, 55), blue = c(70, 171, 255),
-    cyan = c(75, 235, 229), green = c(95, 225, 136), pink = c(255, 116, 179),
-    purple = c(170, 120, 255), red = c(240, 91, 109), grey = c(84, 99, 123),
+    gold = c(255, 220, 57), orange = c(255, 151, 36), blue = c(46, 179, 255),
+    cyan = c(75, 235, 229), green = c(113, 235, 75), pink = c(255, 89, 188),
+    purple = c(175, 83, 255), red = c(240, 91, 109), grey = c(84, 99, 123),
 }
 local RARITY = {
     Common = C.muted, Uncommon = C.green, Rare = C.blue, Epic = C.purple,
@@ -59,18 +59,18 @@ local function text(parent, value, size, position, fontSize, color, font, align)
         Size = size, Position = position or UDim2.new(), BackgroundTransparency = 1,
         Text = value, TextSize = fontSize or 20, TextColor3 = color or C.white,
         Font = font or Enum.Font.GothamBold, TextXAlignment = align or Enum.TextXAlignment.Left,
-        TextWrapped = true, TextStrokeTransparency = 0.8, TextStrokeColor3 = C.ink,
+        TextWrapped = true, TextStrokeTransparency = 0.35, TextStrokeColor3 = C.ink,
     }, parent)
 end
 local function button(parent, caption, color, size, position, callback)
     local b = new("TextButton", {
         Size = size, Position = position or UDim2.new(), BackgroundColor3 = color,
-        Text = caption, Font = Enum.Font.GothamBlack, TextSize = 20,
+        Text = caption, Font = Enum.Font.FredokaOne, TextSize = 20,
         TextColor3 = C.white, TextStrokeColor3 = C.ink, TextStrokeTransparency = 0.35,
         AutoButtonColor = true, BorderSizePixel = 0, Selectable = true,
     }, parent)
-    corner(b, 12)
-    stroke(b, C.ink, 3)
+    corner(b, 8)
+    stroke(b, C.ink, 4)
     gradient(b, c(255, 255, 255), c(182, 195, 220))
     if callback then b.Activated:Connect(callback) end
     return b
@@ -132,7 +132,8 @@ local uiScale = new("UIScale", { Scale = 1 }, root)
 local brand = text(root, "BLADEBOUND", UDim2.fromOffset(390, 38), UDim2.fromOffset(20, 2), 28, C.white, Enum.Font.GothamBlack)
 local subtitle = text(root, "S P I R I T   T R I A L S", UDim2.fromOffset(390, 20), UDim2.fromOffset(22, 36), 12, C.cyan)
 local function currency(kind, title, color)
-    local box = frame(root, UDim2.fromOffset(235, 72), nil, C.ink)
+    local box = frame(root, UDim2.fromOffset(235, 72), nil, color:Lerp(C.ink, 0.45))
+    gradient(box, c(255,255,255), c(145,155,200))
     stroke(box, color, 2)
     local symbol = icon(box, kind, color); symbol.Position = UDim2.fromOffset(12, 16)
     local value = text(box, "0", UDim2.new(1, -68, 0, 33), UDim2.fromOffset(62, 5), 27, C.white, Enum.Font.GothamBlack)
@@ -144,9 +145,10 @@ local trophyCard, trophyLabel = currency("trophy", "TROPHIES", C.gold)
 local powerCard, powerLabel = currency("sword", "DAMAGE / HIT", C.pink)
 local rebirthTag = text(root, "REBIRTH 0", UDim2.fromOffset(200, 25), UDim2.new(), 16, C.purple, Enum.Font.GothamBlack, Enum.TextXAlignment.Right)
 
-local route = frame(root, UDim2.fromOffset(440, 66), nil, C.ink)
+local route = frame(root, UDim2.fromOffset(440, 66), nil, c(255,255,255))
+gradient(route,C.purple,C.blue,0)
 local routeTitle = text(route, "ROOM 01 / 15", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 6), 16, C.gold)
-local routeText = text(route, "TRAIN. FIGHT. ASCEND.", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 32), 14, C.white)
+local routeText = text(route, "TRAIN. FIGHT. ASCEND.", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 29), 14, C.white)
 local nav = new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(150, 490) }, root)
 local tabs = {
     { "Swords", "sword", C.orange }, { "Rooms", "room", C.green },
@@ -154,21 +156,40 @@ local tabs = {
     { "Auras", "aura", C.purple }, { "Rebirth", "rebirth", C.gold },
     { "Codes", "code", C.blue },
 }
+local navTitles, navIcons = {}, {}
+local upgradeBadge
 for i, tab in tabs do
-    local b = button(nav, "", tab[3], UDim2.fromOffset(146, 54), UDim2.fromOffset(0, (i - 1) * 64), function()
+    local b = button(nav, "", tab[3], UDim2.fromOffset(110, 88), UDim2.new(), function()
         openTab(tab[1])
     end)
-    local symbol = icon(b, tab[2], C.white); symbol.Position = UDim2.fromOffset(5, 6)
-    local title = text(b, tab[1]:upper(), UDim2.new(1, -49, 1, 0), UDim2.fromOffset(46, 0), 16, C.white, Enum.Font.GothamBlack)
-    title.TextXAlignment = Enum.TextXAlignment.Center
-    navButtons[i] = b
+    local symbol = icon(b, tab[2], C.white)
+    local title = text(b, tab[1]:upper(), UDim2.new(1, -8, 0, 24), UDim2.fromOffset(4, 58), 17, C.white, Enum.Font.FredokaOne, Enum.TextXAlignment.Center)
+    title.TextStrokeTransparency = 0
+    navButtons[i], navTitles[i], navIcons[i] = b, title, symbol
+    if i == 1 then
+        upgradeBadge = text(b, "!", UDim2.fromOffset(26, 26), UDim2.new(1, -25, 0, -8), 21, C.white, Enum.Font.FredokaOne, Enum.TextXAlignment.Center)
+        upgradeBadge.BackgroundColor3 = C.red; upgradeBadge.BackgroundTransparency = 0
+        corner(upgradeBadge, 20); stroke(upgradeBadge, C.ink, 3)
+        upgradeBadge.Visible = false
+    end
 end
 
 local quest = frame(root, UDim2.fromOffset(252, 180), nil, C.ink)
-text(quest, "YOUR NEXT CHALLENGE", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 12), 14, C.gold)
+text(quest, "YOUR QUEST TRAIL", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 12), 14, C.gold)
 local questTitle = text(quest, "Train your first blade", UDim2.new(1, -24, 0, 42), UDim2.fromOffset(12, 40), 21, C.white, Enum.Font.GothamBlack)
-local questDetail = text(quest, "Earn Spirit with every swing. Walk through the gate to Room 1.", UDim2.new(1, -24, 0, 62), UDim2.fromOffset(12, 82), 15, C.muted)
-local questReward = text(quest, "+5 TROPHIES", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 146), 17, C.green)
+local questDetail = text(quest, "Earn Spirit with every swing. Walk through the gate to Room 1.", UDim2.new(1, -24, 0, 52), UDim2.fromOffset(12, 82), 13, C.white)
+local questReward = text(quest, "+5 TROPHIES", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 136), 15, C.green)
+
+local questButton = button(quest,"START TRAINING",C.green,UDim2.new(1,-24,0,34),UDim2.new(0,12,1,-44),function()
+    if not state then return end
+    if state.fight then openTab("Rooms",true)
+    elseif state.mastery==0 then openTab("Training",true)
+    else action:FireServer("Fight",state.stage) end
+end)
+questButton.TextSize=16
+local comboFlash = text(root,"",UDim2.fromOffset(480,30),nil,23,C.gold,Enum.Font.FredokaOne,Enum.TextXAlignment.Center)
+comboFlash.TextStrokeTransparency=0
+local comboToken=0
 
 local fightBar = frame(root, UDim2.fromOffset(520, 96), nil, C.ink)
 fightBar.Visible = false
@@ -179,11 +200,12 @@ local hpFill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C
 corner(hpFill, 8); gradient(hpFill, C.orange, C.red, 0)
 local hpText = text(fightBar, "Approach and swing to attack", UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 65), 14, C.muted, nil, Enum.TextXAlignment.Center)
 
-local mastery = frame(root, UDim2.fromOffset(480, 72), nil, C.ink)
+local mastery = frame(root, UDim2.fromOffset(480, 72), nil, c(255,255,255))
+gradient(mastery,c(255,232,95),c(158,112,255),0)
 local masteryTitle = text(mastery, "SWORD MASTERY 0", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 7), 16, C.cyan, Enum.Font.GothamBlack)
 local masteryBonus = text(mastery, "Train at a station to permanently increase gains", UDim2.new(1, -24, 0, 18), UDim2.fromOffset(12, 30), 12, C.muted)
 local xpBack = frame(mastery, UDim2.new(1, -24, 0, 8), UDim2.fromOffset(12, 55), C.panel)
-local xpFill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.cyan, BorderSizePixel = 0 }, xpBack)
+local xpFill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.gold, BorderSizePixel = 0 }, xpBack)
 corner(xpFill, 5)
 local trainingTag = text(root, "", UDim2.fromOffset(490, 28), nil, 16, C.cyan, Enum.Font.GothamBlack, Enum.TextXAlignment.Center)
 local swingButton = button(root, "SWING", C.blue, UDim2.fromOffset(258, 65), nil, function() requestSwing() end)
@@ -260,48 +282,63 @@ local function layout()
     root.Size = UDim2.fromOffset(w, h)
     uiScale.Scale = math.min(available.X / w, available.Y / h)
     if portrait then
-        spiritCard.Position = UDim2.fromOffset(20, 66); spiritCard.Size = UDim2.fromOffset(330, 72)
-        trophyCard.Position = UDim2.fromOffset(370, 66); trophyCard.Size = UDim2.fromOffset(330, 72)
-        powerCard.Position = UDim2.fromOffset(20, 152); powerCard.Size = UDim2.fromOffset(330, 72)
-        rebirthTag.Position = UDim2.fromOffset(474, 25)
-        route.Position = UDim2.fromOffset(370, 152); route.Size = UDim2.fromOffset(330, 72)
-        nav.Position = UDim2.fromOffset(20, 242); nav.Size = UDim2.fromOffset(680, 132)
-        for i, b in navButtons do
-            b.Position = UDim2.fromOffset(((i - 1) % 4) * 174, math.floor((i - 1) / 4) * 66)
-            b.Size = UDim2.fromOffset(158, 56)
+        spiritCard.Position=UDim2.fromOffset(16,64); spiritCard.Size=UDim2.fromOffset(336,64)
+        trophyCard.Position=UDim2.fromOffset(368,64); trophyCard.Size=UDim2.fromOffset(336,64)
+        powerCard.Position=UDim2.fromOffset(16,138); powerCard.Size=UDim2.fromOffset(336,64)
+        route.Position=UDim2.fromOffset(368,138); route.Size=UDim2.fromOffset(336,64)
+        rebirthTag.Position=UDim2.fromOffset(486,24)
+        nav.Position=UDim2.fromOffset(16,220);nav.Size=UDim2.fromOffset(688,164)
+        for i,b in navButtons do
+            b.Size=UDim2.fromOffset(162,74)
+            b.Position=UDim2.fromOffset(((i-1)%4)*174,math.floor((i-1)/4)*84)
+            navIcons[i].Position=UDim2.fromOffset(61,2)
+            navTitles[i].Position=UDim2.fromOffset(4,47);navTitles[i].Size=UDim2.new(1,-8,0,23)
         end
-        fightBar.Position = UDim2.fromOffset(70, 398); fightBar.Size = UDim2.fromOffset(580, 96)
-        quest.Position = UDim2.fromOffset(70, 520); quest.Size = UDim2.fromOffset(580, 180)
-        hubButton.Position = UDim2.fromOffset(50, 770); hubButton.Size = UDim2.fromOffset(276, 50)
-        stopButton.Position = UDim2.fromOffset(360, 770); stopButton.Size = UDim2.fromOffset(276, 50)
-        mastery.Position = UDim2.fromOffset(50, 840); mastery.Size = UDim2.fromOffset(620, 76)
-        trainingTag.Position = UDim2.fromOffset(115, 925)
-        swingButton.Position = UDim2.fromOffset(78, 968); swingButton.Size = UDim2.fromOffset(350, 76)
-        autoButton.Position = UDim2.fromOffset(454, 978); autoButton.Size = UDim2.fromOffset(188, 58)
-        controls.Position = UDim2.fromOffset(35, 1060)
-        savingLabel.Position = UDim2.fromOffset(10, 710); savingLabel.Size = UDim2.fromOffset(700, 44)
-        panel.Size = UDim2.fromOffset(680, 850)
-        toastLabel.Position = UDim2.fromOffset(20, 445); toastLabel.Size = UDim2.fromOffset(680, 70)
+        quest.Position=UDim2.fromOffset(35,400);quest.Size=UDim2.fromOffset(650,208)
+        fightBar.Position=UDim2.fromOffset(60,624);fightBar.Size=UDim2.fromOffset(600,96)
+        savingLabel.Position=UDim2.fromOffset(20,749);savingLabel.Size=UDim2.fromOffset(680,28)
+        hubButton.Position=UDim2.fromOffset(40,782);hubButton.Size=UDim2.fromOffset(300,42)
+        stopButton.Position=UDim2.fromOffset(366,782);stopButton.Size=UDim2.fromOffset(300,42)
+        mastery.Position=UDim2.fromOffset(40,842);mastery.Size=UDim2.fromOffset(640,76)
+        trainingTag.Position=UDim2.fromOffset(112,925)
+        comboFlash.Position=UDim2.fromOffset(110,722);comboFlash.Size=UDim2.fromOffset(500,24)
+        swingButton.Position=UDim2.fromOffset(70,970);swingButton.Size=UDim2.fromOffset(355,76)
+        autoButton.Position=UDim2.fromOffset(455,979);autoButton.Size=UDim2.fromOffset(188,58)
+        controls.Position=UDim2.fromOffset(35,1060)
+        panel.Size=UDim2.fromOffset(680,850)
+        toastLabel.Position=UDim2.fromOffset(20,620);toastLabel.Size=UDim2.fromOffset(680,70)
     else
-        spiritCard.Position = UDim2.fromOffset(20, 64); spiritCard.Size = UDim2.fromOffset(290, 72)
-        trophyCard.Position = UDim2.fromOffset(326, 64); trophyCard.Size = UDim2.fromOffset(218, 72)
-        powerCard.Position = UDim2.fromOffset(560, 64); powerCard.Size = UDim2.fromOffset(230, 72)
-        rebirthTag.Position = UDim2.fromOffset(1055, 20)
-        route.Position = UDim2.fromOffset(814, 68); route.Size = UDim2.fromOffset(440, 66)
-        nav.Position = UDim2.fromOffset(20, 166); nav.Size = UDim2.fromOffset(146, 450)
-        for i, b in navButtons do b.Position = UDim2.fromOffset(0, (i - 1) * 64); b.Size = UDim2.fromOffset(146, 54) end
-        quest.Position = UDim2.fromOffset(1008, 168); quest.Size = UDim2.fromOffset(252, 180)
-        fightBar.Position = UDim2.fromOffset(380, 154); fightBar.Size = UDim2.fromOffset(520, 96)
-        mastery.Position = UDim2.fromOffset(356, 532); mastery.Size = UDim2.fromOffset(530, 72)
-        trainingTag.Position = UDim2.fromOffset(376, 500)
-        swingButton.Position = UDim2.fromOffset(446, 620); swingButton.Size = UDim2.fromOffset(270, 65)
-        autoButton.Position = UDim2.fromOffset(738, 627); autoButton.Size = UDim2.fromOffset(155, 50)
-        hubButton.Position = UDim2.fromOffset(1058, 626); hubButton.Size = UDim2.fromOffset(192, 44)
-        stopButton.Position = UDim2.fromOffset(1058, 578); stopButton.Size = UDim2.fromOffset(192, 38)
-        controls.Position = UDim2.fromOffset(320, 692)
-        savingLabel.Position = UDim2.fromOffset(190, 270); savingLabel.Size = UDim2.fromOffset(800, 36)
-        panel.Size = UDim2.fromOffset(840, 540)
-        toastLabel.Position = UDim2.fromOffset(250, 420); toastLabel.Size = UDim2.fromOffset(780, 60)
+        route.Position=UDim2.fromOffset(420,4);route.Size=UDim2.fromOffset(440,56)
+        spiritCard.Position=UDim2.fromOffset(16,74);spiritCard.Size=UDim2.fromOffset(228,66)
+        trophyCard.Position=UDim2.fromOffset(16,148);trophyCard.Size=UDim2.fromOffset(228,66)
+        powerCard.Position=UDim2.fromOffset(16,552);powerCard.Size=UDim2.fromOffset(228,66)
+        rebirthTag.Position=UDim2.fromOffset(1050,18)
+        nav.Position=UDim2.fromOffset(16,230);nav.Size=UDim2.fromOffset(228,310)
+        for i,b in navButtons do
+            if i==1 then
+                b.Size=UDim2.fromOffset(228,48);b.Position=UDim2.fromOffset(0,0)
+                navIcons[i].Position=UDim2.fromOffset(10,3)
+                navTitles[i].Position=UDim2.fromOffset(50,8);navTitles[i].Size=UDim2.new(1,-60,0,30)
+            else
+                b.Size=UDim2.fromOffset(110,78)
+                b.Position=UDim2.fromOffset(((i-2)%2)*118,58+math.floor((i-2)/2)*86)
+                navIcons[i].Position=UDim2.fromOffset(35,2)
+                navTitles[i].Position=UDim2.fromOffset(4,49);navTitles[i].Size=UDim2.new(1,-8,0,24)
+            end
+        end
+        quest.Position=UDim2.fromOffset(998,84);quest.Size=UDim2.fromOffset(266,208)
+        fightBar.Position=UDim2.fromOffset(380,76);fightBar.Size=UDim2.fromOffset(520,96)
+        mastery.Position=UDim2.fromOffset(330,535);mastery.Size=UDim2.fromOffset(600,76)
+        trainingTag.Position=UDim2.fromOffset(382,504)
+        comboFlash.Position=UDim2.fromOffset(390,467);comboFlash.Size=UDim2.fromOffset(480,30)
+        swingButton.Position=UDim2.fromOffset(382,626);swingButton.Size=UDim2.fromOffset(320,64)
+        autoButton.Position=UDim2.fromOffset(726,633);autoButton.Size=UDim2.fromOffset(174,50)
+        hubButton.Position=UDim2.fromOffset(1054,644);hubButton.Size=UDim2.fromOffset(198,42)
+        stopButton.Position=UDim2.fromOffset(1054,592);stopButton.Size=UDim2.fromOffset(198,38)
+        controls.Position=UDim2.fromOffset(320,694)
+        savingLabel.Position=UDim2.fromOffset(300,185);savingLabel.Size=UDim2.fromOffset(680,40)
+        panel.Size=UDim2.fromOffset(840,540)
+        toastLabel.Position=UDim2.fromOffset(270,360);toastLabel.Size=UDim2.fromOffset(740,70)
     end
     if shade.Visible and render then render(true) end
 end
@@ -664,6 +701,11 @@ requestSwing = function()
     combo = now - lastSwing >= 1.15 and 1 or combo % 3 + 1
     lastSwing = now
     animateSwing(character, combo)
+    comboToken+=1
+    local token=comboToken
+    comboFlash.Text=({"I  •  MOON CUT","II  •  BLOSSOM CROSS","III  •  SPIRIT BREAK"})[combo]
+    comboFlash.TextColor3=combo==3 and C.pink or C.gold
+    task.delay(0.65,function() if comboToken==token then comboFlash.Text="" end end)
     action:FireServer("Swing")
 end
 local toolConnections, characterConnection = {}, nil
@@ -821,7 +863,11 @@ gui.Destroying:Once(function()
 end)
 
 local function onState(s)
+    local previous=state
     state = s
+    if previous and (s.mastery or 0)>(previous.mastery or 0) then
+        toast("MASTERY UP!  LEVEL "..s.mastery,C.gold)
+    end
     refreshDisplayPrompts()
     spiritLabel.Text = fmt(s.spirit)
     trophyLabel.Text = fmt(s.trophies)
@@ -835,6 +881,24 @@ local function onState(s)
     questTitle.Text = stageDef.name
     questReward.Text = "+" .. fmt(SD.roomTrophies(stageIndex)) .. " TROPHIES  /  +" .. fmt(SD.roomReward(stageIndex)) .. " SPIRIT"
     questDetail.Text = s.fight and "Approach your guardian and face it. Swing to deal damage. Clear all six enemies to open the next gate." or "Enter the next room, defeat its guardians, and claim a boss trophy chest. Train in the hub when enemies get tougher."
+    if s.fight then
+        questTitle.Text=s.fight.boss and "DEFEAT THE BOSS" or "CLEAR THE GUARDIANS"
+        questDetail.Text=string.format("%d / %d cleared. Face your target to hit. Dodge when the enemy flashes red.",s.fight.step-1,s.fight.total)
+        questButton.Text="VIEW ROOM TRACK"
+    elseif (s.mastery or 0)==0 then
+        questTitle.Text="AWAKEN YOUR BLADE"
+        questDetail.Text="Stand on Bamboo Fundamentals, start training, and swing until mastery reaches level 1."
+        questButton.Text="SHOW TRAINING"
+    else
+        questTitle.Text="CONQUER ROOM "..s.stage
+        questDetail.Text="Beat the next boss for better trophies and Spirit. Train or forge a new sword if you need more power."
+        questButton.Text="ENTER ROOM "..s.stage
+    end
+    local upgrade=false
+    for i,def in SD.SWORDS do
+        if not s.owned[tostring(i)] and def.cost<=s.spirit then upgrade=true;break end
+    end
+    upgradeBadge.Visible=upgrade
     local level, xp, needed = s.mastery or 0, s.masteryXP or 0, s.masteryNeed or SD.masteryNeed(s.mastery or 0)
     masteryTitle.Text = "SWORD MASTERY " .. level .. "    " .. fmt(xp) .. " / " .. fmt(needed) .. " XP"
     masteryBonus.Text = string.format("x%.2f permanent blade bonus  /  train at a station to level up", s.masteryMult or SD.masteryMultiplier(level))
@@ -863,6 +927,15 @@ sync.OnClientEvent:Connect(function(kind, a, b)
     if kind == "State" then onState(a)
     elseif kind == "Gain" then gainPopup(a)
     elseif kind == "Toast" then toast(a, b)
+    elseif kind == "RoomClear" then
+        toast("ROOM "..a.stage.." CLEAR!  +"..fmt(a.trophies).." TROPHIES",C.gold)
+        for i=1,18 do
+            local bit=new("Frame",{Size=UDim2.fromOffset(8,14),Position=UDim2.new(0.5,0,0.35,0),Rotation=i*23,
+                BorderSizePixel=0,BackgroundColor3=({C.gold,C.pink,C.cyan,C.green})[i%4+1],ZIndex=45},root)
+            TweenService:Create(bit,TweenInfo.new(1.1),{Position=UDim2.new(0.5,math.random(-300,300),0.8,math.random(-120,40)),
+                Rotation=i*97,BackgroundTransparency=1}):Play()
+            Debris:AddItem(bit,1.2)
+        end
     elseif kind == "Hatch" then toast("HATCHED " .. tostring(a) .. "  /  " .. tostring(b), RARITY[b] or C.gold)
     elseif kind == "Open" then openTab(a, true)
     elseif kind == "Swing" then
